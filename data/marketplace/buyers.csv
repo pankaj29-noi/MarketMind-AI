@@ -1,0 +1,161 @@
+id,company_name,city,state,industry
+1,Coral Farms,Udaipur,Rajasthan,Textiles
+2,Maple Auto Components,Hubballi,Karnataka,Renewable Energy
+3,Vertex Farms,Durgapur,West Bengal,Mining
+4,Vertex Energy Ltd,Vadodara,Gujarat,Construction
+5,Pearl Logistics,Kanpur,Uttar Pradesh,Healthcare
+6,Falcon Logistics,Bengaluru,Karnataka,Agriculture
+7,Greenfield Corp,Patna,Bihar,Logistics
+8,Eagle Projects Pvt Ltd,Kolkata,West Bengal,Chemicals
+9,Lotus Corp,Bhopal,Madhya Pradesh,Healthcare
+10,Cobalt Works,Raipur,Chhattisgarh,Agriculture
+11,Eagle Farms,Udaipur,Rajasthan,Logistics
+12,Lotus Hospitals,Indore,Madhya Pradesh,Mining
+13,Cascade Corp,Amritsar,Punjab,Renewable Energy
+14,Cobalt Projects Pvt Ltd,Indore,Madhya Pradesh,Automotive
+15,Greenfield Infra Pvt Ltd,Chandigarh,Chandigarh,Renewable Energy
+16,Falcon Builders,Bengaluru,Karnataka,Chemicals
+17,Ironclad Retail Group,Lucknow,Uttar Pradesh,Textiles
+18,Lotus Mills,Bhopal,Madhya Pradesh,Chemicals
+19,Horizon Retail Group,Pune,Maharashtra,Mining
+20,Cedar Farms,Mysuru,Karnataka,Telecom
+21,Summit Works,Pune,Maharashtra,Agriculture
+22,Ironclad Corp,Pune,Maharashtra,Automotive
+23,Vertex Retail Group,Coimbatore,Tamil Nadu,Automotive
+24,Silverline Works,Howrah,West Bengal,Renewable Energy
+25,Atlas Works,Warangal,Telangana,Chemicals
+26,Atlas Foods Pvt Ltd,Pune,Maharashtra,Chemicals
+27,Lotus Logistics,Surat,Gujarat,Construction
+28,BluePeak Infra Pvt Ltd,Noida,Uttar Pradesh,Education
+29,Summit Hospitals,Bhubaneswar,Odisha,Logistics
+30,Cedar Infra Pvt Ltd,Visakhapatnam,Andhra Pradesh,Food Processing
+31,Maple Projects Pvt Ltd,Bhopal,Madhya Pradesh,Education
+32,Eagle Infra Pvt Ltd,Chandigarh,Chandigarh,Textiles
+33,Falcon Energy Ltd,Hyderabad,Telangana,Logistics
+34,Cascade Energy Ltd,Vijayawada,Andhra Pradesh,Food Processing
+35,Silverline Foods Pvt Ltd,Bhubaneswar,Odisha,Telecom
+36,Eagle Retail Group,Chandigarh,Chandigarh,Education
+37,Silverline Hospitals,Jaipur,Rajasthan,Education
+38,Horizon Mills,Ludhiana,Punjab,Agriculture
+39,Falcon Foods Pvt Ltd,Durgapur,West Bengal,Textiles
+40,Greenfield Retail Group,Lucknow,Uttar Pradesh,Renewable Energy
+41,Cedar Works,Jodhpur,Rajasthan,Textiles
+42,Silverline Auto Components,Mumbai,Maharashtra,Healthcare
+43,Ironclad Infra Pvt Ltd,Jaipur,Rajasthan,Mining
+44,Pearl Retail Group,Ranchi,Jharkhand,Telecom
+45,BluePeak Energy Ltd,Kochi,Kerala,Food Processing
+46,Lotus Energy Ltd,Jaipur,Rajasthan,Chemicals
+47,Cedar Retail Group,Ranchi,Jharkhand,Healthcare
+48,Cedar Logistics,Ranchi,Jharkhand,Textiles
+49,Cedar Energy Ltd,Amritsar,Punjab,Chemicals
+50,Coral Mills,Rajkot,Gujarat,Construction
+51,Ironclad Hospitals,Coimbatore,Tamil Nadu,Mining
+52,Cascade Farms,Vadodara,Gujarat,Mining
+53,Eagle Mills,Guwahati,Assam,Telecom
+54,Titanium Foods Pvt Ltd,Delhi,Delhi,Construction
+55,Ironclad Mills,Rajkot,Gujarat,Textiles
+56,Cascade Mills,Mumbai,Maharashtra,Mining
+57,Cobalt Builders,Udaipur,Rajasthan,Manufacturing
+58,Summit Auto Components,Delhi,Delhi,Mining
+59,Vertex Textiles Ltd,Thiruvananthapuram,Kerala,Construction
+60,Greenfield Foods Pvt Ltd,Delhi,Delhi,Retail
+61,Maple Builders,Bengaluru,Karnataka,Chemicals
+62,Horizon Logistics,Thiruvananthapuram,Kerala,Construction
+63,Summit Builders,Hyderabad,Telangana,Telecom
+64,Coral Infra Pvt Ltd,Jaipur,Rajasthan,Construction
+65,Pearl Foods Pvt Ltd,Raipur,Chhattisgarh,Telecom
+66,BluePeak Works,Vijayawada,Andhra Pradesh,Logistics
+67,Falcon Retail Group,Noida,Uttar Pradesh,Education
+68,Pearl Mills,Patna,Bihar,Automotive
+69,Summit Foods Pvt Ltd,Chennai,Tamil Nadu,Telecom
+70,Ironclad Textiles Ltd,Vadodara,Gujarat,Chemicals
+71,Horizon Builders,Jaipur,Rajasthan,Renewable Energy
+72,Cobalt Infra Pvt Ltd,Warangal,Telangana,Manufacturing
+73,Summit Farms,Delhi,Delhi,Mining
+74,Coral Energy Ltd,Amritsar,Punjab,Construction
+75,BluePeak Mills,Guwahati,Assam,Food Processing
+76,Ironclad Logistics,Coimbatore,Tamil Nadu,Healthcare
+77,BluePeak Textiles Ltd,Hyderabad,Telangana,Chemicals
+78,Vertex Infra Pvt Ltd,Bengaluru,Karnataka,Renewable Energy
+79,Coral Foods Pvt Ltd,Patna,Bihar,Chemicals
+80,Falcon Infra Pvt Ltd,Amritsar,Punjab,Mining
+81,Titanium Auto Components,Thiruvananthapuram,Kerala,Retail
+82,Horizon Foods Pvt Ltd,Nagpur,Maharashtra,Logistics
+83,Maple Foods Pvt Ltd,Jodhpur,Rajasthan,Manufacturing
+84,Horizon Farms,Patna,Bihar,Automotive
+85,Greenfield Works,Udaipur,Rajasthan,Automotive
+86,Cascade Retail Group,Vijayawada,Andhra Pradesh,Food Processing
+87,Falcon Mills,Ahmedabad,Gujarat,Automotive
+88,Pearl Textiles Ltd,Thiruvananthapuram,Kerala,Construction
+89,Eagle Hospitals,Bhopal,Madhya Pradesh,Textiles
+90,Maple Textiles Ltd,Chennai,Tamil Nadu,Education
+91,Cascade Hospitals,Bhopal,Madhya Pradesh,Mining
+92,Maple Mills,Lucknow,Uttar Pradesh,Construction
+93,Titanium Corp,Mumbai,Maharashtra,Food Processing
+94,Cobalt Retail Group,Bhopal,Madhya Pradesh,Manufacturing
+95,Ironclad Auto Components,Howrah,West Bengal,Automotive
+96,Eagle Textiles Ltd,Ludhiana,Punjab,Telecom
+97,Vertex Mills,Ludhiana,Punjab,Mining
+98,Greenfield Textiles Ltd,Raipur,Chhattisgarh,Telecom
+99,Cobalt Logistics,Hubballi,Karnataka,Agriculture
+100,Atlas Retail Group,Coimbatore,Tamil Nadu,Food Processing
+101,Coral Auto Components,Udaipur,Rajasthan,Logistics
+102,BluePeak Retail Group,Ranchi,Jharkhand,Renewable Energy
+103,Lotus Farms,Raipur,Chhattisgarh,Healthcare
+104,Vertex Corp,Mysuru,Karnataka,Chemicals
+105,Pearl Hospitals,Visakhapatnam,Andhra Pradesh,Chemicals
+106,Greenfield Mills,Noida,Uttar Pradesh,Education
+107,Eagle Corp,Hyderabad,Telangana,Retail
+108,Cedar Hospitals,Ranchi,Jharkhand,Telecom
+109,Falcon Hospitals,Surat,Gujarat,Mining
+110,BluePeak Foods Pvt Ltd,Durgapur,West Bengal,Agriculture
+111,Pearl Projects Pvt Ltd,Lucknow,Uttar Pradesh,Mining
+112,Eagle Energy Ltd,Durgapur,West Bengal,Logistics
+113,Maple Corp,Chennai,Tamil Nadu,Education
+114,Titanium Retail Group,Mumbai,Maharashtra,Mining
+115,Vertex Logistics,Hyderabad,Telangana,Construction
+116,Eagle Works,Jodhpur,Rajasthan,Textiles
+117,Lotus Textiles Ltd,Hubballi,Karnataka,Education
+118,Coral Projects Pvt Ltd,Nagpur,Maharashtra,Textiles
+119,Summit Mills,Kolkata,West Bengal,Textiles
+120,Pearl Builders,Jaipur,Rajasthan,Healthcare
+121,Cascade Builders,Ahmedabad,Gujarat,Construction
+122,Lotus Foods Pvt Ltd,Jaipur,Rajasthan,Retail
+123,Falcon Textiles Ltd,Jodhpur,Rajasthan,Retail
+124,Silverline Textiles Ltd,Mumbai,Maharashtra,Telecom
+125,Cedar Foods Pvt Ltd,Noida,Uttar Pradesh,Food Processing
+126,Pearl Energy Ltd,Jodhpur,Rajasthan,Retail
+127,BluePeak Logistics,Patna,Bihar,Textiles
+128,Coral Works,Rajkot,Gujarat,Automotive
+129,Ironclad Foods Pvt Ltd,Jodhpur,Rajasthan,Food Processing
+130,Atlas Textiles Ltd,Nagpur,Maharashtra,Chemicals
+131,Falcon Projects Pvt Ltd,Guwahati,Assam,Textiles
+132,Coral Hospitals,Bhopal,Madhya Pradesh,Renewable Energy
+133,Ironclad Builders,Bhubaneswar,Odisha,Textiles
+134,Silverline Corp,Warangal,Telangana,Chemicals
+135,Maple Works,Coimbatore,Tamil Nadu,Retail
+136,BluePeak Corp,Indore,Madhya Pradesh,Education
+137,Cobalt Hospitals,Hubballi,Karnataka,Telecom
+138,Lotus Projects Pvt Ltd,Jodhpur,Rajasthan,Healthcare
+139,Cedar Textiles Ltd,Jodhpur,Rajasthan,Automotive
+140,Horizon Textiles Ltd,Amritsar,Punjab,Mining
+141,Coral Textiles Ltd,Bhopal,Madhya Pradesh,Construction
+142,Vertex Projects Pvt Ltd,Nagpur,Maharashtra,Chemicals
+143,Atlas Farms,Bhubaneswar,Odisha,Renewable Energy
+144,Lotus Retail Group,Howrah,West Bengal,Food Processing
+145,Atlas Corp,Thiruvananthapuram,Kerala,Automotive
+146,Summit Energy Ltd,Howrah,West Bengal,Agriculture
+147,Cedar Auto Components,Kolkata,West Bengal,Manufacturing
+148,Greenfield Projects Pvt Ltd,Kanpur,Uttar Pradesh,Agriculture
+149,Vertex Works,Patna,Bihar,Agriculture
+150,Horizon Corp,Ranchi,Jharkhand,Agriculture
+151,BluePeak Hospitals,Hyderabad,Telangana,Telecom
+152,Vertex Builders,Bhubaneswar,Odisha,Chemicals
+153,Cascade Infra Pvt Ltd,Pune,Maharashtra,Renewable Energy
+154,Greenfield Hospitals,Jaipur,Rajasthan,Automotive
+155,Pearl Auto Components,Coimbatore,Tamil Nadu,Mining
+156,Falcon Works,Howrah,West Bengal,Healthcare
+157,Titanium Farms,Nagpur,Maharashtra,Mining
+158,Titanium Mills,Amritsar,Punjab,Food Processing
+159,Horizon Hospitals,Raipur,Chhattisgarh,Renewable Energy
+160,Cobalt Energy Ltd,Lucknow,Uttar Pradesh,Logistics

@@ -100,8 +100,18 @@ def validate_sql(query: str, schema: Dict[str, Any] = None, question: str = "") 
                 critical_issues.append("Incorrect ORDER BY direction: Expected ASC for 'lowest'/'bottom' intent.")
 
     # 5. Invalid column references
-    if schema and "columns" in schema:
-        valid_columns = [col["name"].lower() for col in schema["columns"]]
+    if schema and ("columns" in schema or schema.get("multi_table")):
+        valid_columns = set()
+        if schema.get("multi_table") and schema.get("tables"):
+            for table in schema["tables"]:
+                for col in table.get("columns", []):
+                    valid_columns.add(col["name"].lower())
+                    # Also allow table-qualified forms in quotes
+                    valid_columns.add(f"{table['name']}.{col['name']}".lower())
+        else:
+            for col in schema.get("columns", []):
+                valid_columns.add(col["name"].lower())
+
         quoted_cols = re.findall(r'"([^"]+)"', query)
         for col in quoted_cols:
             if col.lower() not in valid_columns:

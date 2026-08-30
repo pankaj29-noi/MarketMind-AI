@@ -43,7 +43,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ sessionQueries = [], sessi
             <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">Overview</div>
             <h2 className="mt-1 text-2xl font-bold tracking-tight">Everything your agent did this month</h2>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              A live pulse of query volume, latency, and success rates across your DataAgent Pro workspace.
+              A live pulse of query volume, latency, and success rates across your MarketMind AI workspace.
             </p>
           </div>
 

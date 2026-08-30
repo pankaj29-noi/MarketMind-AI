@@ -13,6 +13,8 @@ import {
   CircleCheck,
   ChevronDown,
   ChevronLeft,
+  Target,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Column, HistoricalReport } from "@/types/index";
@@ -22,6 +24,7 @@ interface AppSidebarProps {
   datasetName?: string;
   rowCount?: number;
   columns?: Column[];
+  tables?: string[];
   history: HistoricalReport[];
   onUpload: () => void;
   onSelectHistory: (id: string) => void;
@@ -60,6 +63,7 @@ export function AppSidebar({
   datasetName,
   rowCount,
   columns,
+  tables,
   history,
   onUpload,
   onSelectHistory,
@@ -94,8 +98,8 @@ export function AppSidebar({
                 <Sparkles className="h-4 w-4 text-primary-foreground" />
               </div>
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold tracking-tight">DataAgent Pro</div>
-                <div className="truncate text-[11px] text-muted-foreground">Autonomous analyst</div>
+                <div className="truncate text-sm font-semibold tracking-tight">MarketMind AI</div>
+                <div className="truncate text-[11px] text-muted-foreground">B2B marketplace intelligence</div>
               </div>
             </div>
             <button
@@ -139,14 +143,32 @@ export function AppSidebar({
                 </div>
                 <div className="mt-2.5 grid grid-cols-2 gap-2 text-[11px]">
                   <div className="rounded-lg border border-border bg-background/40 px-2 py-1.5">
-                    <div className="text-muted-foreground">Rows</div>
+                    <div className="text-muted-foreground">
+                      {tables && tables.length > 1 ? 'Total rows' : 'Rows'}
+                    </div>
                     <div className="font-semibold">{rowCount?.toLocaleString() || 0}</div>
                   </div>
                   <div className="rounded-lg border border-border bg-background/40 px-2 py-1.5">
-                    <div className="text-muted-foreground">Columns</div>
-                    <div className="font-semibold">{columns?.length || 0}</div>
+                    <div className="text-muted-foreground">
+                      {tables && tables.length > 1 ? 'Tables' : 'Columns'}
+                    </div>
+                    <div className="font-semibold">
+                      {tables && tables.length > 1 ? tables.length : (columns?.length || 0)}
+                    </div>
                   </div>
                 </div>
+                {tables && tables.length > 1 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {tables.map((t) => (
+                      <span
+                        key={t}
+                        className="rounded-md border border-border bg-background/50 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+                      >
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -267,6 +289,28 @@ export function AppSidebar({
             )}
           >
             <Sparkles className="h-3.5 w-3.5" /> Workspace
+          </button>
+          <button
+            onClick={() => setActivePath("/lead")}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors",
+              activePath === "/lead"
+                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
+            )}
+          >
+            <Target className="h-3.5 w-3.5" /> Lead Intelligence
+          </button>
+          <button
+            onClick={() => setActivePath("/monitoring")}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors",
+              activePath === "/monitoring"
+                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
+            )}
+          >
+            <Activity className="h-3.5 w-3.5" /> Agent Monitoring
           </button>
           <button
             onClick={() => setActivePath("/analytics")}

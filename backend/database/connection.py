@@ -35,17 +35,38 @@ def get_sanitized_db_url(url: str) -> str:
 
 # Initialize connection pool
 pool = None
+_POOL_UNAVAILABLE = False
 
 def get_pool() -> ConnectionPool:
-    global pool
+    global pool, _POOL_UNAVAILABLE
+    if _POOL_UNAVAILABLE:
+        raise RuntimeError(
+            "PostgreSQL previously unavailable. Start docker-compose and restart the backend."
+        )
     if pool is None:
         sanitized_url = get_sanitized_db_url(DATABASE_URL)
         logger.info(f"Initializing PostgreSQL connection pool with URL: {sanitized_url}")
         # min_size=1, max_size=10 is suitable for our single developer / resume-quality scale
-        new_pool = ConnectionPool(conninfo=DATABASE_URL, min_size=1, max_size=10, open=True, kwargs={"autocommit": True})
+        # connect_timeout keeps local demos from hanging when Postgres is down
+        new_pool = ConnectionPool(
+            conninfo=DATABASE_URL,
+            min_size=1,
+            max_size=10,
+            open=True,
+            kwargs={"autocommit": True, "connect_timeout": 3},
+        )
         
-        # Wait until the pool is ready (at least min_size connections established)
-        new_pool.wait()
+        # Wait until the pool is ready (fail fast if DB is unreachable)
+        try:
+            new_pool.wait(timeout=8)
+        except Exception as e:
+            logger.error(f"PostgreSQL pool failed to become ready: {e}")
+            _POOL_UNAVAILABLE = True
+            try:
+                new_pool.close()
+            except Exception:
+                pass
+            raise
         
         pool = new_pool
         logger.info("PostgreSQL connection pool initialized successfully and verified database connectivity.")
@@ -110,6 +131,50 @@ def init_db():
         common_failure_types JSONB DEFAULT '{}'::jsonb
     );
 
+    -- Workflow observability (Lead Intelligence / future agents)
+    CREATE TABLE IF NOT EXISTS workflow_runs (
+        run_id VARCHAR(64) PRIMARY KEY,
+        session_id VARCHAR(255),
+        workflow_name VARCHAR(128) NOT NULL,
+        input_summary TEXT,
+        started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        completed_at TIMESTAMP WITH TIME ZONE,
+        latency_ms DOUBLE PRECISION,
+        final_status VARCHAR(64) NOT NULL DEFAULT 'running',
+        product_matches_count INTEGER DEFAULT 0,
+        supplier_matches_count INTEGER DEFAULT 0,
+        error_message TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_workflow_runs_started
+        ON workflow_runs (started_at DESC);
+
+    CREATE TABLE IF NOT EXISTS workflow_node_runs (
+        id SERIAL PRIMARY KEY,
+        run_id VARCHAR(64) REFERENCES workflow_runs(run_id) ON DELETE CASCADE,
+        node_name VARCHAR(128) NOT NULL,
+        execution_order INTEGER NOT NULL,
+        duration_ms DOUBLE PRECISION,
+        status VARCHAR(64) DEFAULT 'success',
+        error_message TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_workflow_node_runs_run_id
+        ON workflow_node_runs (run_id);
+
+    CREATE TABLE IF NOT EXISTS workflow_feedback (
+        id SERIAL PRIMARY KEY,
+        run_id VARCHAR(64) REFERENCES workflow_runs(run_id) ON DELETE CASCADE,
+        rating VARCHAR(32) NOT NULL,
+        comment TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_workflow_feedback_run_id
+        ON workflow_feedback (run_id);
+
     -- Add default user if not exists for easy portfolio testing
     INSERT INTO users (id, email) 
     VALUES (1, 'portfolio.user@example.com') 
@@ -128,8 +193,9 @@ def init_db():
         logger.warning("Continuing execution. Ensure PostgreSQL is running for persistent state.")
 
 def close_pool():
-    global pool
+    global pool, _POOL_UNAVAILABLE
     if pool is not None:
         logger.info("Closing PostgreSQL connection pool...")
         pool.close()
         pool = None
+    _POOL_UNAVAILABLE = False

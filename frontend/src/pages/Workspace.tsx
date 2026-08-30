@@ -5,9 +5,12 @@ import { Report } from '@/components/report/Report';
 import { UserMessage } from '@/components/chat/UserMessage';
 import { ChatComposer } from '@/components/chat/ChatComposer';
 import { Toaster } from '@/components/ui/Toaster';
-import { Sparkles, Loader2, PanelLeftOpen } from 'lucide-react';
+import { Sparkles, Loader2, PanelLeftOpen, Store } from 'lucide-react';
 import { UploadZone } from '@/components/ui/UploadZone';
 import { Analytics } from './Analytics';
+import { LeadIntelligence } from './LeadIntelligence';
+import { AgentMonitoring } from './AgentMonitoring';
+import { MARKETPLACE_SAMPLE_QUESTIONS } from '@/lib/marketplace';
 import type { ChatMessage } from '@/types/index';
 
 interface WorkspaceProps {
@@ -16,9 +19,12 @@ interface WorkspaceProps {
   datasetName?: string;
   rowCount: number;
   columns: any[];
+  tables?: string[];
   isUploading: boolean;
+  isLoadingDemo?: boolean;
   uploadError: string | null;
   handleFileUpload: (file: File) => void;
+  onLoadMarketplaceDemo?: () => void;
   onUploadClick: () => void;
   history: any[];
   onSelectHistory: (id: string) => void;
@@ -43,8 +49,8 @@ interface WorkspaceProps {
 }
 
 export const Workspace: React.FC<WorkspaceProps> = ({
-  session, hasDataset, datasetName, rowCount, columns,
-  isUploading, uploadError, handleFileUpload, onUploadClick,
+  session, hasDataset, datasetName, rowCount, columns, tables,
+  isUploading, isLoadingDemo, uploadError, handleFileUpload, onLoadMarketplaceDemo, onUploadClick,
   history, onSelectHistory, selectedHistoryId,
   isLeftSidebarCollapsed, onToggleLeftSidebar,
   isRightSidebarCollapsed, onToggleRightSidebar,
@@ -57,7 +63,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
   const bottomRef = useRef<HTMLDivElement>(null);
   const [activePath, setActivePath] = useState('/');
 
-  // Sync activePath ↔ activeTab
+  // Sync activePath ↔ activeTab (analytics only; lead is independent)
   useEffect(() => {
     if (activeTab === 'metrics' && activePath !== '/analytics') setActivePath('/analytics');
     if (activeTab === 'analysis' && activePath === '/analytics') setActivePath('/');
@@ -73,7 +79,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
   const handleSetActivePath = (path: string) => {
     setActivePath(path);
     if (path === '/analytics') setActiveTab('metrics');
-    else setActiveTab('analysis');
+    else if (path === '/' || path === '/lead' || path === '/monitoring') setActiveTab('analysis');
   };
 
   const handleSubmitQuestion = (text: string) => {
@@ -91,6 +97,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
     datasetName,
     rowCount,
     columns,
+    tables,
     history,
     onUpload: onUploadClick,
     onSelectHistory,
@@ -130,6 +137,20 @@ export const Workspace: React.FC<WorkspaceProps> = ({
           </div>
         )}
 
+        {/* ── Lead Intelligence ── */}
+        {activePath === '/lead' && (
+          <div className="flex-1 overflow-hidden">
+            <LeadIntelligence sessionId={session?.session_id} />
+          </div>
+        )}
+
+        {/* ── Agent Monitoring ── */}
+        {activePath === '/monitoring' && (
+          <div className="flex-1 overflow-hidden">
+            <AgentMonitoring />
+          </div>
+        )}
+
         {/* ── Workspace / Chat ── */}
         {activePath === '/' && (
           <>
@@ -162,22 +183,49 @@ export const Workspace: React.FC<WorkspaceProps> = ({
             {/* Chat / Upload area */}
             <div className="scrollbar-thin flex-1 overflow-y-auto">
               {!hasDataset ? (
-                /* Upload state */
+                /* Upload / demo state */
                 <div className="flex h-full min-h-[calc(100vh-4rem)] flex-col items-center justify-center p-8">
                   <div className="max-w-[580px] w-full space-y-8 animate-fade-in">
                     <div className="text-center space-y-3">
                       <div className="mx-auto w-16 h-16 grid place-items-center rounded-2xl bg-[image:var(--gradient-primary)] shadow-[var(--shadow-glow)] mb-4">
                         <Sparkles className="h-8 w-8 text-primary-foreground" />
                       </div>
-                      <h1 className="text-3xl font-bold tracking-tight">Autonomous Data Analyst</h1>
+                      <h1 className="text-3xl font-bold tracking-tight">MarketMind AI</h1>
+                      <p className="text-sm font-medium text-primary">
+                        Agentic B2B Marketplace Intelligence Platform
+                      </p>
                       <p className="text-base text-muted-foreground max-w-md mx-auto leading-relaxed">
-                        Upload a CSV and ask questions in plain English. The AI agent queries, visualizes, and explains your data instantly.
+                        Load the marketplace demo or upload a CSV. Ask about buyers, suppliers, products, leads, and orders in plain English.
                       </p>
                     </div>
+
+                    {onLoadMarketplaceDemo && (
+                      <button
+                        type="button"
+                        onClick={onLoadMarketplaceDemo}
+                        disabled={isUploading || isLoadingDemo}
+                        className="group flex w-full items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3.5 text-sm font-semibold text-primary transition-all hover:bg-primary hover:text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isLoadingDemo ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Store className="h-4 w-4" />
+                        )}
+                        {isLoadingDemo ? 'Loading marketplace demo…' : 'Load Marketplace Demo'}
+                      </button>
+                    )}
+
+                    <div className="relative flex items-center gap-3 text-[11px] uppercase tracking-wider text-muted-foreground">
+                      <div className="h-px flex-1 bg-border" />
+                      <span>or upload your CSV</span>
+                      <div className="h-px flex-1 bg-border" />
+                    </div>
+
                     <UploadZone
                       onFileSelect={handleFileUpload}
                       loading={isUploading}
                       accept=".csv"
+                      disabled={isLoadingDemo}
                     />
                     {uploadError && (
                       <div className="text-sm font-medium text-destructive bg-destructive/10 border border-destructive/20 rounded-xl p-4 text-center">
@@ -189,17 +237,34 @@ export const Workspace: React.FC<WorkspaceProps> = ({
               ) : (
                 /* Chat feed */
                 <div className="mx-auto w-full max-w-4xl px-4 pt-6 pb-48">
-                  {/* Empty state */}
+                  {/* Empty state with sample questions */}
                   {chatHistory.length === 0 && !isAnalyzing && (
-                    <div className="flex flex-col items-center justify-center py-20 px-6 space-y-6 max-w-md mx-auto text-center">
-                      <div className="rounded-full bg-primary/10 p-4 border border-primary/20 animate-pulse">
+                    <div className="flex flex-col items-center justify-center py-12 px-6 space-y-6 max-w-2xl mx-auto text-center">
+                      <div className="rounded-full bg-primary/10 p-4 border border-primary/20">
                         <Sparkles className="h-8 w-8 text-primary" />
                       </div>
                       <div className="space-y-2">
-                        <h3 className="text-lg font-semibold tracking-tight text-foreground">Start exploring your data</h3>
+                        <h3 className="text-lg font-semibold tracking-tight text-foreground">
+                          Explore marketplace intelligence
+                        </h3>
                         <p className="text-sm text-muted-foreground leading-relaxed">
-                          Ask questions to discover insights in your dataset.
+                          {tables && tables.length > 1
+                            ? `Demo loaded with ${tables.length} tables · ${rowCount.toLocaleString()} total rows. Try a sample question:`
+                            : 'Ask questions to discover insights in your dataset. Try a sample:'}
                         </p>
+                      </div>
+                      <div className="grid w-full gap-2 sm:grid-cols-2 text-left">
+                        {MARKETPLACE_SAMPLE_QUESTIONS.map((q) => (
+                          <button
+                            key={q}
+                            type="button"
+                            onClick={() => handleSubmitQuestion(q)}
+                            disabled={isAnalyzing}
+                            className="rounded-xl border border-border bg-card/50 px-3.5 py-3 text-left text-xs leading-relaxed text-foreground/90 transition-colors hover:border-primary/40 hover:bg-primary/5 disabled:opacity-50"
+                          >
+                            {q}
+                          </button>
+                        ))}
                       </div>
                     </div>
                   )}
@@ -257,7 +322,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
                     model={latestModel}
                   />
                   <div className="mt-2 text-center text-[10px] text-muted-foreground">
-                    DataAgent Pro can make mistakes. Always verify critical decisions.
+                    MarketMind AI can make mistakes. Always verify critical decisions.
                   </div>
                 </div>
               </div>

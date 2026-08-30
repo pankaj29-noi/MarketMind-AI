@@ -19,6 +19,7 @@ export const App: React.FC = () => {
   // Session & Dataset State
   const [session, setSession] = useState<UploadResponse | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isLoadingDemo, setIsLoadingDemo] = useState(false);
   const [uploadError, setUploadError] = useState('');
 
   // Analysis State
@@ -32,6 +33,13 @@ export const App: React.FC = () => {
 
   // Hidden file input ref
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const applySession = (data: UploadResponse) => {
+    setSession(data);
+    setChatHistory([]);
+    setTraceHistory([]);
+    setSessionQueries([]);
+  };
 
   // CSV Drag and drop helper
   const handleFileUpload = async (file: File) => {
@@ -52,17 +60,39 @@ export const App: React.FC = () => {
       }
 
       const data: UploadResponse = await response.json();
-      setSession(data);
-      // Reset state on new upload
-      setChatHistory([]);
-      setTraceHistory([]);
-      setSessionQueries([]);
+      applySession(data);
       toast(`Dataset loaded — ${data.row_count?.toLocaleString() ?? 0} rows`, 'success');
     } catch (err: any) {
       setUploadError(err.message || 'Error uploading file.');
       toast(err.message || 'Upload failed', 'error');
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleLoadMarketplaceDemo = async () => {
+    setIsLoadingDemo(true);
+    setUploadError('');
+    try {
+      const response = await fetch('http://localhost:8000/marketplace/demo', {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({}));
+        throw new Error(detail.detail || 'Failed to load marketplace demo.');
+      }
+      const data: UploadResponse = await response.json();
+      applySession(data);
+      const tableCount = data.tables?.length ?? 0;
+      toast(
+        `Marketplace demo loaded — ${tableCount} tables · ${data.row_count?.toLocaleString() ?? 0} rows`,
+        'success'
+      );
+    } catch (err: any) {
+      setUploadError(err.message || 'Error loading marketplace demo.');
+      toast(err.message || 'Demo load failed', 'error');
+    } finally {
+      setIsLoadingDemo(false);
     }
   };
 
@@ -265,12 +295,15 @@ export const App: React.FC = () => {
       <Workspace
         session={session}
         hasDataset={!!session}
-        datasetName={session?.dataset_id}
+        datasetName={session?.dataset_name || session?.dataset_id}
         rowCount={session?.row_count || 0}
         columns={session?.columns || []}
+        tables={session?.tables}
         isUploading={isUploading}
+        isLoadingDemo={isLoadingDemo}
         uploadError={uploadError}
         handleFileUpload={handleFileUpload}
+        onLoadMarketplaceDemo={handleLoadMarketplaceDemo}
         onUploadClick={() => fileInputRef.current?.click()}
         history={sidebarHistory}
         onSelectHistory={(id) => {

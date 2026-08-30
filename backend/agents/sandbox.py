@@ -16,24 +16,39 @@ SCRATCH_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."
 
 def prepare_scratch_directory(session_id: str, dataset_id: str) -> str:
     """
-    Prepares a clean scratch directory for the session and exports the active table to CSV.
+    Prepares a clean scratch directory for the session and exports active table(s) to CSV.
+
+    For the MarketMind multi-table demo, ``dataset_id`` is the logical id ``marketplace``
+    (not a DuckDB table). Export each real table instead.
     """
     session_dir = os.path.join(SCRATCH_DIR, session_id)
     os.makedirs(session_dir, exist_ok=True)
-    
-    csv_path = os.path.join(session_dir, f"{dataset_id}.csv")
-    
-    # If the CSV doesn't exist in the scratch dir yet, export it from DuckDB
-    if not os.path.exists(csv_path):
-        logger.info(f"Exporting in-memory DuckDB table {dataset_id} to {csv_path} for Python execution...")
-        try:
-            conn = session_manager.get_session_connection(session_id)
-            # Export table to CSV
-            conn.execute(f"COPY {dataset_id} TO '{csv_path.replace(os.sep, '/')}' (HEADER, DELIMITER ',');")
-        except Exception as e:
-            logger.error(f"Failed to export table to CSV for sandbox: {e}")
-            raise
-            
+
+    from backend.marketplace.demo_data import MARKETPLACE_DATASET_ID, MARKETPLACE_TABLES
+
+    tables_to_export = (
+        list(MARKETPLACE_TABLES)
+        if dataset_id == MARKETPLACE_DATASET_ID
+        else [dataset_id]
+    )
+
+    try:
+        conn = session_manager.get_session_connection(session_id)
+        for table_name in tables_to_export:
+            csv_path = os.path.join(session_dir, f"{table_name}.csv")
+            if os.path.exists(csv_path):
+                continue
+            logger.info(
+                f"Exporting in-memory DuckDB table {table_name} to {csv_path} for Python execution..."
+            )
+            conn.execute(
+                f"COPY {table_name} TO '{csv_path.replace(os.sep, '/')}' "
+                f"(HEADER, DELIMITER ',');"
+            )
+    except Exception as e:
+        logger.error(f"Failed to export table(s) to CSV for sandbox: {e}")
+        raise
+
     return session_dir
 
 def run_python_in_sandbox(session_id: str, dataset_id: str, code: str) -> Tuple[bool, str, Dict[str, Any]]:

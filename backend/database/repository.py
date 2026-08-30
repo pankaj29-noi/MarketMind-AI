@@ -6,6 +6,9 @@ from backend.database.connection import get_db_connection
 
 logger = logging.getLogger(__name__)
 
+# In-memory session fallback when PostgreSQL is unavailable (demo continuity)
+_MEMORY_SESSIONS: Dict[str, Dict[str, Any]] = {}
+
 def create_session(session_id: str, dataset_id: str, dataset_name: Optional[str] = None, user_id: int = 1) -> Dict[str, Any]:
     """Creates a new user session mapping to a dataset."""
     query = """
@@ -15,14 +18,19 @@ def create_session(session_id: str, dataset_id: str, dataset_name: Optional[str]
         SET dataset_id = EXCLUDED.dataset_id, dataset_name = EXCLUDED.dataset_name
         RETURNING *;
     """
+    fallback = {"id": session_id, "user_id": user_id, "dataset_id": dataset_id, "dataset_name": dataset_name}
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, (session_id, user_id, dataset_id, dataset_name))
-                return cur.fetchone()
+                row = cur.fetchone()
+                if row:
+                    _MEMORY_SESSIONS[session_id] = dict(row)
+                    return dict(row)
     except Exception as e:
         logger.error(f"Failed to create session in Postgres: {e}")
-        return {"id": session_id, "user_id": user_id, "dataset_id": dataset_id, "dataset_name": dataset_name}
+    _MEMORY_SESSIONS[session_id] = fallback
+    return fallback
 
 def get_session(session_id: str) -> Optional[Dict[str, Any]]:
     """Retrieves session details by session_id."""
@@ -31,10 +39,12 @@ def get_session(session_id: str) -> Optional[Dict[str, Any]]:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, (session_id,))
-                return cur.fetchone()
+                row = cur.fetchone()
+                if row:
+                    return dict(row)
     except Exception as e:
         logger.error(f"Failed to get session from Postgres: {e}")
-        return None
+    return _MEMORY_SESSIONS.get(session_id)
 
 def save_report(
     session_id: str, 

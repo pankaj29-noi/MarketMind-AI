@@ -7,17 +7,20 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 logger = logging.getLogger(__name__)
 
-SQL_GENERATOR_PROMPT = """You are the SQL Code Generator for the Autonomous Data Analyst Agent.
-Your job is to generate a single, highly optimized SELECT query to run against DuckDB/PostgreSQL.
+SQL_GENERATOR_PROMPT = """You are the SQL Code Generator for MarketMind AI — Agentic B2B Marketplace Intelligence.
+Your job is to generate a single, highly optimized SELECT query to run against DuckDB.
 
 CRITICAL RULES:
 1. ONLY write a SELECT statement. Do NOT write INSERT, UPDATE, DELETE, CREATE, or DROP statements.
-2. The active table name in the query must be "{table_name}".
+2. TABLE NAMES:
+   - If the schema is MULTI-TABLE, use the real table names (categories, suppliers, buyers, products, leads, orders) and JOIN using the documented relationships. Do NOT query a fictional table named "{table_name}".
+   - If the schema is a single uploaded CSV, the active table name must be "{table_name}".
 3. Keep the column names exactly as they appear in the schema.
 4. Output ONLY the raw SQL query. Do not wrap it in explanation text or backticks, just output the plain SQL.
 5. DATE & TIMESTAMP OPERATIONS (DUCKDB SQL-COMPATIBLE):
    - Review the schema and sample values for columns representing dates/timestamps.
    - If a column is a VARCHAR resembling a date (e.g., '2/24/2003 0:00'), you MUST parse it using the `strptime()` function with the correct format string (e.g. `strptime(OrderDate, '%m/%d/%Y %H:%M')`) before applying date functions like `date_trunc()` or `strftime()`.
+   - For marketplace `orders.order_date` (YYYY-MM-DD), you may use CAST(order_date AS DATE) or strptime as appropriate.
    - Never apply `date_trunc` or date aggregations directly on unparsed VARCHAR columns.
 
 Schema:
@@ -87,13 +90,9 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
     error_msg = None
     generated_code = ""
 
-    # Build schema description
-    columns_desc = ""
-    for col in schema_profile.get("columns", []):
-        samples = col.get("sample_values", [])
-        samples_str = f" | Samples: {samples}" if samples else ""
-        columns_desc += f"- {col['name']} ({col['dtype']}){samples_str}\n"
-    schema_context = f"Table: {table_name}\nColumns:\n{columns_desc}"
+    from backend.marketplace.demo_data import format_schema_context_for_llm
+
+    schema_context = format_schema_context_for_llm(schema_profile or {}, fallback_table=table_name)
 
     if approach == "sql":
         system_prompt = SQL_GENERATOR_PROMPT.format(table_name=table_name, schema_context=schema_context, question=question, plan_steps=plan_steps)
@@ -143,9 +142,56 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
         logger.error(f"Error in Code Generator Node: {e}")
         status = "failed"
         error_msg = str(e)
+        from backend.utils.provider_errors import (
+            is_provider_auth_or_config_error,
+            provider_error_user_message,
+        )
+        from backend.marketplace.demo_data import MARKETPLACE_DATASET_ID
+        from backend.marketplace.sql_fallback import resolve_marketplace_sql
+
         error_str = error_msg.lower()
-        if "429" in error_str or "resource_exhausted" in error_str or "rate limit" in error_str:
-            logger.error("Provider chain exhausted due to rate limit. Skipping agent retry loop.")
+        is_rate_limited = (
+            "429" in error_str
+            or "resource_exhausted" in error_str
+            or "rate limit" in error_str
+        )
+        is_provider = is_rate_limited or is_provider_auth_or_config_error(error_msg)
+
+        # Marketplace demo offline path: deterministic SQL when LLM keys are invalid.
+        if (
+            is_provider
+            and approach == "sql"
+            and dataset_id == MARKETPLACE_DATASET_ID
+        ):
+            fallback_sql = resolve_marketplace_sql(question)
+            if fallback_sql:
+                logger.warning(
+                    "Using marketplace SQL fallback after LLM provider failure."
+                )
+                status = "success"
+                error_msg = None
+                generated_code = fallback_sql
+                end_time = time.time()
+                duration_ms = (end_time - start_time) * 1000
+                node_metadata = {
+                    "node_name": node_name,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "duration_ms": duration_ms,
+                    "status": status,
+                    "retry_count": retry_count,
+                    "error_message": None,
+                }
+                execution_metadata = list(state.get("execution_metadata") or [])
+                execution_metadata.append(node_metadata)
+                return {
+                    "generated_code": generated_code,
+                    "execution_metadata": execution_metadata,
+                    "failure_summary": None,
+                }
+
+        if is_provider:
+            logger.error("Provider chain exhausted. Skipping agent retry loop.")
             # Record metrics here since we are returning early
             end_time = time.time()
             duration_ms = (end_time - start_time) * 1000
@@ -165,7 +211,7 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
                 "execution_metadata": execution_metadata,
                 "failure_summary": {
                     "failure_type": "provider_error",
-                    "error_message": "Provider chain exhausted due to rate limit.",
+                    "error_message": provider_error_user_message(error_msg),
                     "code_context": "",
                     "expected_vs_actual": error_msg
                 }

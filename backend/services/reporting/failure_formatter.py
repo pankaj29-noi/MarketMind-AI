@@ -15,6 +15,8 @@ def map_error_to_resolution(failure_type: str) -> str:
         return "Reduce query complexity or dataset size."
     elif failure_type in ["visualization"]:
         return "Review the visualization requirements and ensure the data matches the requested chart type."
+    elif failure_type in ["provider_error", "provider"]:
+        return "Set a valid GROQ_API_KEY in DataAgent-Pro/.env (and optionally GOOGLE_API_KEY), then restart the backend."
     else:
         return "Review generated code or execution logs."
 
@@ -32,6 +34,8 @@ def map_error_to_summary(failure_type: str) -> str:
         return "The execution was aborted because it exceeded the allowed time limit."
     elif failure_type in ["visualization"]:
         return "The visualization could not be generated from the returned data."
+    elif failure_type in ["provider_error", "provider"]:
+        return "The LLM provider could not authenticate or complete the request. Marketplace demo data is loaded; analytics needs a valid API key."
     else:
         return "The execution encountered an unexpected runtime error."
 
@@ -86,6 +90,9 @@ def generate_failure_report(state: AgentState) -> Dict[str, Any]:
     # Generate deterministic fields
     summary = map_error_to_summary(failure_type)
     resolution = map_error_to_resolution(failure_type)
+    # Prefer actionable provider message already set by planner/code_generator
+    if failure_type.lower() in ["provider_error", "provider"] and error_message:
+        summary = error_message
     location = determine_failure_location(state)
     
     # ── Dataset context ──────────────────────────────────────────────────────

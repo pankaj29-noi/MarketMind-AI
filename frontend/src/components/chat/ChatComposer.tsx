@@ -53,7 +53,7 @@ export function ChatComposer({ onSubmit, disabled, model }: ChatComposerProps) {
           value={v}
           onChange={(e) => setV(e.target.value)}
           rows={1}
-          placeholder="Ask anything about your dataset…"
+          placeholder="Ask about buyers, suppliers, products, leads, or orders…"
           className="scrollbar-thin max-h-40 min-h-[36px] flex-1 resize-none border-0 bg-transparent px-2 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
           disabled={disabled}
           onKeyDown={(e) => {

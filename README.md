@@ -1,317 +1,313 @@
-<div align="center">
+# MarketMind AI
 
-# 🤖 DataAgent Pro
+**MarketMind AI is an Agentic B2B Marketplace Intelligence Platform** for analyzing marketplace data, understanding buyer requirements, matching products and suppliers, and generating explainable business recommendations.
 
-### Stateful Multi-Agent Data Analysis with LangGraph
-
-> **An Agentic AI Data Analysis System for Reliable Analytical Workflows**
-
-Analyze CSV datasets using natural language through a **stateful LangGraph workflow** that combines **LLM reasoning**, **deterministic execution**, **safe validation**, and **interactive visualizations**.
-
-Generate grounded analytical insights with validated SQL, Python execution, and persistent conversational memory.
-
-<br>
-
-![Python](https://img.shields.io/badge/PYTHON-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FASTAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)
-![React](https://img.shields.io/badge/REACT-61DAFB?style=for-the-badge&logo=react&logoColor=black)
-![TypeScript](https://img.shields.io/badge/TYPESCRIPT-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
-![LangGraph](https://img.shields.io/badge/LANGGRAPH-000000?style=for-the-badge)
-![AGENTIC AI](https://img.shields.io/badge/AGENTIC_AI-8A2BE2?style=for-the-badge)
-![DuckDB](https://img.shields.io/badge/DUCKDB-FFF000?style=for-the-badge&logo=duckdb&logoColor=black)
-![PostgreSQL](https://img.shields.io/badge/POSTGRESQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
-
-<br>
-
-![Plotly](https://img.shields.io/badge/PLOTLY-3F4F75?style=for-the-badge&logo=plotly&logoColor=white)
-![MCP](https://img.shields.io/badge/MCP-FF6B35?style=for-the-badge)
-![DuckDB](https://img.shields.io/badge/SQL-DUCKDB-FACC15?style=for-the-badge)
-![Docker](https://img.shields.io/badge/DOCKER-2496ED?style=for-the-badge&logo=docker&logoColor=white)
-![MIT](https://img.shields.io/badge/LICENSE-MIT-97CA00?style=for-the-badge)
-
-</div>
+It combines natural-language analytics over a multi-table marketplace dataset with a dedicated Lead Intelligence LangGraph workflow, deterministic supplier ranking, and built-in observability.
 
 ---
 
-# 📸 Product Preview
+## Overview
 
-The following screenshots demonstrate the complete workflow—from dataset upload and conversational analysis to validated results, interactive visualizations, generated SQL, and execution analytics.
+MarketMind AI helps marketplace operators and sales teams:
 
+- Ask business questions across buyers, suppliers, products, categories, leads, and orders
+- Turn unstructured buyer requirements into ranked, explainable supplier shortlists
+- Observe agent runs, latency, and user feedback in one place
 
-## 1️⃣ Dataset Upload
-
-Upload a CSV dataset to start a new analysis session. The agent automatically profiles the dataset, identifies its schema, and prepares it for downstream analytical tasks.
-<p align="center">
-  <img src="./screenshots/Dataset Uploading Page.png" width="90%">
-</p>
+The platform ships with a synthetic Indian B2B marketplace demo so you can run a full recruiter-style walkthrough locally—even without a live LLM API key.
 
 ---
 
-## 2️⃣ Main Analysis Workspace
+## Problem Statement
 
-The primary workspace where users ask analytical questions in natural language. The agent plans the workflow, generates SQL or Python when required, validates execution, and presents grounded analytical results in real time.
-<p align="center">
-  <img src="./screenshots/Main Workspace.png" width="90%">
-</p>
+B2B marketplaces accumulate large volumes of operational data while buyer demand often arrives as free-text enquiries. Teams struggle to:
 
----
+- Answer cross-table questions quickly (GMV, conversion, supplier performance, regional demand)
+- Extract structured product, quantity, and location signals from unstructured requirements
+- Match buyers to relevant products and suppliers with transparent scoring
+- Monitor agent workflows and collect feedback for continuous improvement
 
-## 3️⃣ Example Analysis — Monthly Sales Trend
-
-A complete analytical report including:
-
-- Executive Summary
-- Query Results
-- Interactive Visualization
-- Statistical Insights
-
-<p align="center">
-  <img src="./screenshots/q1.jpg" width="90%">
-</p>
+MarketMind AI addresses this with a multi-agent analytics engine plus a separate Lead Intelligence workflow on top of a realistic synthetic marketplace dataset.
 
 ---
 
-## 4️⃣ Conversational Follow-up Analysis
+## Key Features
 
-The agent maintains conversation state using LangGraph checkpointing, allowing follow-up questions without re-uploading the dataset.
-
-Example:
-
-> "Show the top 3"
-
-The system automatically understands the previous analytical context.
-
-<p align="center">
-  <img src="./screenshots/q2.png" width="90%">
-</p>
+- **AI-powered marketplace analytics** — natural-language questions over DuckDB marketplace tables
+- **LangGraph workflow orchestration** — supervisor + specialized workers for analytics; separate graph for leads
+- **Lead Intelligence** — requirement parsing → validation → product match → supplier match → ranking
+- **Explainable deterministic supplier ranking** — formula-based scores, never invented by an LLM
+- **Marketplace demo dataset** — one-click load of six related tables
+- **Observability** — run IDs, node timings, latency, success metrics
+- **User feedback** — Helpful / Not Helpful with optional comments
+- **Fallback resilience** — PostgreSQL or in-memory persistence; MemorySaver when Postgres is unavailable
+- **LLM + Demo extraction** — Supports LLM-based requirement extraction when configured, with a **deterministic demo extractor** for local demonstrations when API credentials are unavailable (demo extraction is **not** an LLM)
 
 ---
 
-## 5️⃣ Explainable AI & Debug Information
+## System Architecture
 
-Every analytical result is fully transparent.
+```mermaid
+flowchart TD
+    User[User] --> FE[React Frontend]
+    FE --> API[FastAPI Backend]
+    API --> Analytics[Marketplace Analytics Agent]
+    API --> Lead[Lead Intelligence Workflow]
+    Analytics --> LG[LangGraph / LLM Layer]
+    Lead --> LG
+    LG --> Duck[(DuckDB Marketplace Dataset)]
+    LG --> PG[(PostgreSQL / In-Memory Fallback)]
+    PG --> Obs[Observability + Feedback]
+```
 
-The agent exposes:
+### Lead Intelligence workflow
 
-- Generated SQL
-- LLM reasoning
-- Execution plan
-- Runtime metadata
+```mermaid
+flowchart TD
+    R[Buyer Requirement] --> P[Requirement Parser]
+    P --> V[Validation]
+    V --> PM[Product Matching]
+    PM --> SM[Supplier Matching]
+    SM --> Rank[Deterministic Supplier Ranking]
+    Rank --> Rec[Recommendation]
+```
 
-allowing users to inspect exactly how every answer was produced.
-
-<p align="center">
-  <img src="./screenshots/Q 4.2.png" width="90%">
-</p>
-
----
-
-## 6️⃣ Analytics & Observability Dashboard
-
-The built-in analytics dashboard tracks system performance, execution latency, retry rates, recovery statistics, and historical execution metrics for monitoring agent behavior.
-
-<p align="center">
-  <img src="./screenshots/Analystics.png" width="90%">
-</p>
-
----
-
-## ⚡ Why This Project is Different
-
-Many AI data analysis tools primarily generate SQL or Python using an LLM and return the result directly. DataAgent Pro combines **LLM reasoning** with **deterministic execution**, **stateful workflows**, and **validation pipelines** to produce more reliable analytical results.
-
-| Capability | Typical AI Data Assistant | DataAgent Pro |
-| :--- | :--- | :--- |
-| **Workflow** | Single-step LLM response | **Stateful LangGraph multi-agent workflow** |
-| **Calculations** | Performed or generated by the LLM | **Executed deterministically using DuckDB, Pandas & NumPy** |
-| **Conversation Memory** | Limited chat history | **Persistent LangGraph checkpoints with PostgreSQL** |
-| **Error Recovery** | Stops on failures | **Validation, reflection, and automatic retries** |
-| **Execution Safety** | Limited validation | **SQL validation and Python AST security checks** |
-| **Explainability** | Final answer only | **Generated SQL, execution plan, reasoning, and reports** |
-| **Observability** | Minimal execution visibility | **Pipeline timeline, execution metrics, and analytics dashboard** |
-| **Tool Integration** | Direct tool calls | **MCP-based tool architecture with fallback support** |
+Analytics and Lead Intelligence are **separate** LangGraph graphs. Lead Intelligence does not modify the analytics agent topology.
 
 ---
 
-## 🛠️ Core Engineering Highlights
+## Technology Stack
 
-- **LangGraph Supervisor** – Routes requests to specialized workers for modular execution.
-- **Persistent Memory** – PostgreSQL checkpoints preserve conversation state across sessions.
-- **Safe Code Execution** – SQL validation and Python AST checks improve reliability and security.
-- **MCP Tool Integration** – Analytical capabilities are exposed through Model Context Protocol with automatic fallback to local implementations.
-- **Grounded AI Reports** – The LLM explains deterministic results instead of generating numbers.
-- **Session Isolation** – Each analysis runs in an independent DuckDB session with automatic cleanup.
-
----
-
-## 🏗️ System Architecture
-
-DataAgent Pro follows a **stateful multi-agent architecture** built with **LangGraph**. A central Supervisor coordinates specialized workers for planning, execution, validation, visualization, and reporting, while PostgreSQL preserves workflow state across sessions.
-
-<p align="center">
-  <img src="./screenshots/System Architecture.png" alt="System Architecture" width="90%">
-</p>
-
----
-
-## 🔁 Validation, Reflection & Retry Loop
-
-Every generated SQL or Python script is validated before execution. If validation fails or the results are unreliable, the system automatically reflects on the failure, regenerates the query, and retries execution. After the retry limit is reached, it returns a structured failure report instead of an incorrect response.
-
-<p align="center">
-  <img src="./screenshots/Validation.png" alt="Validation Reflection Retry Loop" width="90%">
-</p>
-
----
-
-
-## 🛡️ Safe Execution
-
-Generated SQL and Python code are validated before execution.
-
-- SQL validation prevents common query errors.
-- Python AST validation blocks unsafe imports and dangerous functions.
-- Code runs inside isolated subprocesses with execution timeouts for safer execution.
-
-## 📊 Observability
-
-The system records execution metrics and workflow traces, allowing users to monitor:
-
-- Execution success rate
-- Retry and recovery statistics
-- Execution timeline
-- System performance metrics
-
-These insights are displayed through an integrated analytics dashboard.
-
----
-
-## 📦 Tech Stack
-
-| Category | Technologies |
+| Layer | Stack |
 | :--- | :--- |
-| **Frontend** | React, TypeScript, Tailwind CSS, Vite |
-| **Backend** | FastAPI, Python |
-| **AI Framework** | LangGraph, LangChain |
-| **LLMs** | Groq (Llama 3.3 70B), Gemini 2.5 Flash |
-| **Database** | PostgreSQL, DuckDB |
-| **Data Processing** | Pandas, NumPy |
-| **Visualization** | Plotly |
-| **Reporting** | ReportLab |
-| **Tool Integration** | Model Context Protocol (MCP) |
+| Frontend | React, TypeScript, Vite, Tailwind CSS |
+| Backend | Python, FastAPI, Uvicorn, Pydantic |
+| Agents | LangGraph, LangChain |
+| LLMs | Groq (Llama 3.3 70B), optional Google Gemini fallback |
+| Analytics store | DuckDB (in-memory, per session) |
+| App state / observability | PostgreSQL 16 (with in-memory fallback) |
+| Charts / reports | Plotly, ReportLab |
+| Infra | Docker Compose (Postgres) |
 
 ---
 
-## 📂 Project Structure
+## Marketplace Dataset
+
+Synthetic seed CSVs in `data/marketplace/` (no real personal data):
+
+| Table | Approx. rows | Role |
+| :--- | ---: | :--- |
+| categories | 20 | Parent + leaf categories |
+| suppliers | 80 | Ratings, verification, response time |
+| buyers | 160 | Companies by industry / state |
+| products | 430+ | Linked to suppliers & categories |
+| leads | 800 | Enquiries with status & estimated value |
+| orders | 550 | Buyer ↔ supplier transactions |
+
+Domains include solar, packaging, industrial equipment, agriculture, and related Indian B2B categories.
+
+---
+
+## Supplier Ranking Logic
+
+Ranking is **fully deterministic**. The LLM is never used to invent scores.
 
 ```text
-autonomous-data-analyst-agent/
-│
-├── backend/          # FastAPI + LangGraph workflow
-├── frontend/         # React application
-├── screenshots/      # README images
+final_score =
+  0.35 × product_match_score      # best product text/category match in [0,1]
++ 0.20 × rating_score             # supplier.rating / 5.0
++ 0.15 × verified_score           # 1.0 if verified else 0.0
++ 0.15 × response_time_score      # faster response → higher (1 - hours/72)
++ 0.10 × order_performance_score  # delivered/confirmed share + volume
++ 0.05 × location_score           # same city=1.0, same state=0.6, else 0.0
+```
+
+Each recommendation includes a short human-readable explanation of the score components.
+
+---
+
+## Observability and Feedback
+
+| Store | Contents |
+| :--- | :--- |
+| `workflow_runs` | run id, status, latency, match counts, errors |
+| `workflow_node_runs` | node name, order, duration, status |
+| `workflow_feedback` | helpful / not_helpful + optional comment |
+
+Tracked Lead nodes: `requirement_parser` → `validation` → `product_matcher` → `supplier_matcher` → `supplier_ranker` → `response_formatter`.
+
+**Dashboard metrics**
+
+- `success_rate` = complete / (total − running)
+- `average_latency_ms` = mean finished latency
+- `helpful_feedback_rate` = helpful / all feedback
+
+UI: **Lead Intelligence** (node timings + feedback) · **Agent Monitoring** (summary + recent runs)
+
+---
+
+## API Endpoints
+
+| Method | Path | Purpose |
+| :--- | :--- | :--- |
+| `POST` | `/upload` | Upload a single CSV |
+| `POST` | `/marketplace/demo` | Load full marketplace demo |
+| `POST` | `/analyze` | Conversational marketplace analytics |
+| `POST` | `/marketplace/lead/analyze` | Lead Intelligence workflow |
+| `POST` | `/marketplace/feedback` | Helpful / not helpful feedback |
+| `GET` | `/marketplace/observability/runs` | Recent workflow runs |
+| `GET` | `/marketplace/observability/summary` | Success rate, latency, feedback rate |
+| `GET` | `/execution/{session_id}/trace` | Analytics pipeline trace |
+| `GET` | `/history/{session_id}` | Session report history |
+| `GET` | `/report/{execution_id}/pdf` | Download PDF report |
+| `GET` | `/metrics` | Legacy analytics execution metrics |
+
+---
+
+## Demo Mode vs Real LLM Mode
+
+### Real LLM Mode
+
+Requires a valid configured API key:
+
+```bash
+GROQ_API_KEY=gsk_your_real_key
+DEMO_MODE=auto
+```
+
+- Lead Intelligence uses Groq for requirement extraction (`extraction_source: "llm"`)
+- Analytics planner / SQL generation uses the live LLM
+- Optional `GOOGLE_API_KEY` enables Gemini fallback
+
+### DEMO Mode
+
+Works without a real API key (placeholders are fine):
+
+```bash
+GROQ_API_KEY=your_groq_api_key
+DEMO_MODE=auto
+```
+
+- Lead requirement extraction uses a **deterministic demo extractor** (keyword / regex rules)
+- Responses are labeled `extraction_source: "demo_deterministic"`
+- **Demo Mode does not claim that an LLM processed the requirement**
+- Validation, product/supplier matching, deterministic ranking, and observability still run for real
+- Marketplace analytics sample questions use DuckDB SQL fallbacks when the LLM key is invalid
+- Unclear input such as `asdf` still returns `needs_info`
+
+| Variable | Required | Purpose |
+| :--- | :--- | :--- |
+| `DATABASE_URL` | Recommended | Postgres connection string |
+| `GROQ_API_KEY` | For Real LLM Mode | Primary LLM |
+| `GOOGLE_API_KEY` | Optional | Gemini fallback |
+| `DEMO_MODE` | Optional (`auto`) | `auto` / `true` / `false` |
+| `GEMINI_FALLBACK_MODEL` | Optional | Default `gemini-2.5-flash` |
+| `SANDBOX_TIMEOUT_SECONDS` | Optional | Default `10` |
+| `SANDBOX_MEMORY_LIMIT_MB` | Optional | Default `256` |
+
+> If Postgres is down, the API still starts: marketplace demo, Lead Intelligence, MemorySaver analytics checkpointer, and in-memory observability remain available.
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.10+
+- Node.js 18+
+- Docker Desktop (optional but recommended for PostgreSQL)
+- Optional: Groq API key from [console.groq.com](https://console.groq.com) for Real LLM Mode
+
+### One command
+
+```bash
+./start.sh
+```
+
+Then open **http://127.0.0.1:5173**
+
+`./start.sh` will:
+
+1. Ensure `.env` exists (from `.env.example`) with `DEMO_MODE=auto`
+2. Start PostgreSQL via Docker Compose when Docker is running
+3. Install Python / Node dependencies if needed
+4. Start backend (`:8000`) and frontend (`:5173`)
+
+If Docker Desktop is not running on macOS, open it manually, wait until it is healthy, then re-run `./start.sh`. Marketplace demo + Lead Intelligence DEMO Mode still work without Postgres.
+
+### Manual alternative
+
+```bash
+docker compose up -d
+
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp -n .env.example .env
+
+uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+
+# new terminal
+cd frontend && npm install && npm run dev
+```
+
+---
+
+## Demo Flow
+
+Recruiter-friendly walkthrough:
+
+1. Open the app → click **Load Marketplace Demo**
+2. In **Workspace**, ask: `Which product categories generated the highest order value?`
+3. Open **Lead Intelligence**
+4. Analyze: `Need 500 solar panels in Jaipur within two weeks`
+5. Review product matches and explainable supplier ranking
+6. Submit **Helpful** / **Not Helpful** feedback
+7. Open **Agent Monitoring** to inspect runs, latency, and feedback metrics
+
+---
+
+## Example Queries
+
+**Workspace analytics**
+
+- Which product categories generated the highest order value?
+- Which states generate the most buyer enquiries?
+- What is the lead conversion rate by category?
+- Which suppliers have the fastest response times?
+- Show monthly marketplace GMV trends.
+
+**Lead Intelligence**
+
+- Need 500 solar panels in Jaipur within two weeks
+- Looking for industrial water pumps for my factory in Delhi
+- Need bulk packaging boxes in Mumbai
+- Need agricultural equipment for bulk purchase
+- Need xyz unknown widget *(expects `no_products`)*
+- asdf *(expects `needs_info`)*
+
+---
+
+## Project structure
+
+```text
+.
+├── backend/
+│   ├── agents/              # Analytics LangGraph multi-agent system
+│   ├── marketplace/         # Demo data + Lead Intelligence + observability
+│   ├── database/            # Postgres pool + schema init
+│   └── main.py              # FastAPI entrypoint
+├── data/marketplace/        # Seed CSVs
+├── frontend/                # React app
 ├── docker-compose.yml
+├── start.sh
 ├── requirements.txt
+├── .env.example
 └── README.md
 ```
 
 ---
 
-## 🚀 Getting Started
+## License
 
-### 1. Clone the Repository
-
-```bash
-git clone <repository-url>
-cd autonomous-data-analyst-agent
-```
-
-### 2. Start PostgreSQL
-
-```bash
-docker-compose up -d
-```
-
-### 3. Backend Setup
-
-```bash
-python -m venv .venv
-
-# Activate environment
-# Windows
-.venv\Scripts\activate
-
-# Linux / macOS
-source .venv/bin/activate
-
-pip install -r requirements.txt
-
-cp .env.example .env
-```
-
-Configure your API keys inside `.env`.
-
-Start the backend:
-
-```bash
-uvicorn backend.main:app --reload
-```
-
-### 4. Frontend Setup
-
-```bash
-cd frontend
-
-npm install
-
-npm run dev
-```
-
-Open:
-
-- Frontend → `http://localhost:5173`
-- Backend → `http://localhost:8000`
-
----
-
-## 💬 Example Queries
-
-- "Show the top 7 customers by total sales."
-- "Show monthly sales trends."
-- "Calculate the correlation between sales and quantity."
-- "Detect outliers in sales."
-- "Show the percentage contribution by deal size."
-
----
-
-## 🔒 Limitations
-
-- Supports CSV datasets only.
-- Python code runs inside subprocess-based sandboxes rather than containers.
-- MCP communication currently uses local stdio transport.
-
----
-
-
-## ⭐ Key Takeaways
-
-This project demonstrates practical AI engineering concepts including:
-
-- Multi-agent orchestration with LangGraph
-- Stateful workflows and checkpointing
-- Safe SQL and Python execution
-- MCP-based tool integration
-- Reflection and retry mechanisms
-- Interactive analytics and reporting
-
-## 📄 License
-
-This project is licensed under the **MIT License**.
-
-
-## 👨‍💻 Author
-
-**Chetan VK**
-
-B.Tech in Artificial Intelligence & Data Science
-# agent
+MIT

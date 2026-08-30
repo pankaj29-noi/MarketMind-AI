@@ -1,0 +1,81 @@
+id,name,city,state,rating,verified,response_time_hours
+1,Western Supplies,Pune,Maharashtra,4.4,true,10.9
+2,Prime Tradings,Guwahati,Assam,3.7,true,16.5
+3,Ganga Industries,Ranchi,Jharkhand,3.2,true,39.7
+4,Vikas Chem,Guwahati,Assam,3.4,false,54.9
+5,Nova Safety,Kanpur,Uttar Pradesh,3.4,true,55.2
+6,Nexus Supplies,Kolkata,West Bengal,4.7,true,58.3
+7,Astra Supplies,Durgapur,West Bengal,3.0,true,45.6
+8,Zenith Manufacturers,Mysuru,Karnataka,2.9,true,21.5
+9,Metro Distributors,Chennai,Tamil Nadu,3.6,true,60.2
+10,Nova Power,Kolkata,West Bengal,3.3,true,67.5
+11,Western Tradings,Raipur,Chhattisgarh,4.2,true,18.4
+12,Astra Pack,Udaipur,Rajasthan,5.0,true,40.5
+13,National Agro,Bengaluru,Karnataka,3.3,true,23.4
+14,Surya Tradings,Vadodara,Gujarat,4.8,true,52.0
+15,Shakti Fabrics,Indore,Madhya Pradesh,4.7,true,11.1
+16,Apex Distributors,Ranchi,Jharkhand,4.0,false,31.4
+17,Deccan Pack,Howrah,West Bengal,3.3,false,37.2
+18,Metro Enterprises,Coimbatore,Tamil Nadu,3.1,true,49.3
+19,Eastern Tradings,Durgapur,West Bengal,3.6,false,38.6
+20,Sahyadri Industries,Coimbatore,Tamil Nadu,4.3,true,19.9
+21,Western Agro,Coimbatore,Tamil Nadu,3.4,true,1.2
+22,Surya Equipments,Visakhapatnam,Andhra Pradesh,4.8,false,22.2
+23,Western Manufacturers,Hyderabad,Telangana,3.6,true,68.7
+24,Eastern Agro,Thiruvananthapuram,Kerala,2.8,false,63.4
+25,Delta Distributors,Bengaluru,Karnataka,3.3,true,6.6
+26,Kaveri Tradings,Bhubaneswar,Odisha,4.5,true,34.7
+27,Sahyadri Equipments,Jodhpur,Rajasthan,4.0,true,69.5
+28,Sahyadri Manufacturers,Noida,Uttar Pradesh,3.7,false,27.5
+29,Ganga Chem,Coimbatore,Tamil Nadu,3.3,true,2.5
+30,Sahyadri Distributors,Guwahati,Assam,3.3,true,45.8
+31,Vikas Tradings,Nagpur,Maharashtra,4.7,true,17.9
+32,National Fabrics,Vadodara,Gujarat,4.0,false,63.6
+33,Deccan Fabrics,Jaipur,Rajasthan,4.5,false,14.5
+34,Prime Safety,Kolkata,West Bengal,3.7,true,52.8
+35,National Supplies,Bengaluru,Karnataka,3.7,true,62.2
+36,Vikas Manufacturers,Surat,Gujarat,4.0,true,14.0
+37,Astra Distributors,Mysuru,Karnataka,3.8,false,40.1
+38,Indo Industries,Hubballi,Karnataka,4.8,false,12.8
+39,Kaveri Fabrics,Vadodara,Gujarat,4.7,false,12.7
+40,Bharat Pack,Jodhpur,Rajasthan,4.8,false,21.3
+41,Sahyadri Fabrics,Hyderabad,Telangana,3.2,true,5.2
+42,Sahyadri Enterprises,Lucknow,Uttar Pradesh,2.9,true,36.7
+43,Ganga Equipments,Bengaluru,Karnataka,4.9,true,14.2
+44,National Distributors,Indore,Madhya Pradesh,3.1,false,18.5
+45,Eastern Enterprises,Hubballi,Karnataka,3.7,true,38.1
+46,Surya Manufacturers,Lucknow,Uttar Pradesh,3.3,true,48.7
+47,Delta Chem,Lucknow,Uttar Pradesh,4.8,false,1.7
+48,Eastern Supplies,Mysuru,Karnataka,4.0,true,10.4
+49,Zenith Tradings,Jaipur,Rajasthan,3.6,true,60.2
+50,Delta Industries,Ranchi,Jharkhand,3.5,false,67.7
+51,Apex Tech,Coimbatore,Tamil Nadu,4.8,false,12.0
+52,Delta Manufacturers,Kanpur,Uttar Pradesh,3.2,true,19.7
+53,Kaveri Tech,Bengaluru,Karnataka,3.0,true,20.6
+54,Bharat Agro,Madurai,Tamil Nadu,4.2,true,53.6
+55,Sahyadri Safety,Ranchi,Jharkhand,2.8,true,63.7
+56,Apex Enterprises,Howrah,West Bengal,4.1,true,10.0
+57,Delta Power,Nagpur,Maharashtra,4.8,true,18.7
+58,Prime Power,Ranchi,Jharkhand,4.7,true,45.1
+59,Nova Equipments,Bhopal,Madhya Pradesh,2.9,false,24.6
+60,Pinnacle Distributors,Udaipur,Rajasthan,3.2,false,28.2
+61,Indo Fabrics,Rajkot,Gujarat,3.2,false,25.8
+62,Vikas Distributors,Pune,Maharashtra,4.3,true,20.8
+63,Metro Tech,Kolkata,West Bengal,4.2,true,70.7
+64,Sahyadri Agro,Pune,Maharashtra,3.1,false,13.7
+65,Surya Enterprises,Chennai,Tamil Nadu,4.1,true,56.8
+66,Pinnacle Supplies,Durgapur,West Bengal,4.8,true,4.2
+67,Pinnacle Industries,Vijayawada,Andhra Pradesh,4.8,true,52.1
+68,National Manufacturers,Howrah,West Bengal,3.7,false,66.4
+69,Delta Products,Bhopal,Madhya Pradesh,3.5,false,40.4
+70,Shakti Safety,Durgapur,West Bengal,4.3,false,44.7
+71,Delta Pack,Ranchi,Jharkhand,4.6,true,15.9
+72,Deccan Agro,Amritsar,Punjab,3.8,false,37.3
+73,Nova Tradings,Delhi,Delhi,3.9,true,24.8
+74,Vikas Products,Rajkot,Gujarat,4.6,true,4.3
+75,Astra Safety,Patna,Bihar,3.2,false,36.1
+76,Vikas Solutions,Mumbai,Maharashtra,4.8,false,63.9
+77,Nova Chem,Bengaluru,Karnataka,4.0,false,9.6
+78,Apex Chem,Vijayawada,Andhra Pradesh,5.0,true,68.5
+79,Sahyadri Chem,Warangal,Telangana,4.4,true,19.4
+80,Vikas Tech,Vijayawada,Andhra Pradesh,3.9,true,32.2

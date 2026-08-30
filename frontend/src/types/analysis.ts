@@ -11,13 +11,24 @@ export interface AnalysisResponse {
 export interface Column {
   name: string;
   dtype: string;
+  table?: string;
+}
+
+export interface TableStat {
+  name: string;
+  row_count: number;
+  columns: Column[];
 }
 
 export interface UploadResponse {
   session_id: string;
   dataset_id: string;
+  dataset_name?: string;
   row_count: number;
   columns: Column[];
+  tables?: string[];
+  table_stats?: TableStat[];
+  relationships?: string[];
 }
 
 export interface DatasetInfo {

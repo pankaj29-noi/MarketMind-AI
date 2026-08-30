@@ -52,13 +52,15 @@ def python_analyst_node(state: AgentState) -> Dict[str, Any]:
     status = "success"
     error_msg = None
     
-    # Build schema description
-    columns_desc = ""
-    for col in schema_profile.get("columns", []):
-        samples = col.get("sample_values", [])
-        samples_str = f" | Samples: {samples}" if samples else ""
-        columns_desc += f"- {col['name']} ({col['dtype']}){samples_str}\n"
-    schema_context = f"Table: {table_name}\nColumns:\n{columns_desc}"
+    from backend.marketplace.demo_data import format_schema_context_for_llm
+
+    schema_context = format_schema_context_for_llm(schema_profile or {}, fallback_table=table_name)
+    if schema_profile.get("multi_table"):
+        schema_context += (
+            "\nNOTE: For multi-table marketplace sessions, `df` may not contain all tables. "
+            "Prefer SQL capability for cross-table joins. If generating Python, operate only on "
+            "columns available in the provided primary/products context or request SQL instead.\n"
+        )
     
     messages = [
         SystemMessage(content=PYTHON_ANALYST_SYSTEM_PROMPT),

@@ -83,11 +83,11 @@ If it is a FOLLOW-UP, you must generate a `resolved_question` that combines the 
 If it is a NEW INTENT, set `is_follow_up` to false and set `resolved_question` to the current question exactly.
 """
 
-    system_prompt = f"""You are the Supervisor Agent for an Autonomous Data Analyst.
+    system_prompt = f"""You are the Supervisor Agent for MarketMind AI — an Agentic B2B Marketplace Intelligence Platform.
 Your job is to route the workflow to the correct capability.
 
 AVAILABLE CAPABILITIES:
-- SQL: Generates and executes SQL queries to answer questions about the data (filtering, joins, aggregations, ranking, grouping).
+- SQL: Generates and executes SQL queries to answer questions about the data (filtering, joins, aggregations, ranking, grouping). Prefer SQL for marketplace multi-table questions (buyers, suppliers, products, categories, leads, orders).
 - ANALYSIS: Performs deterministic statistical analysis (correlation, descriptive, distribution, trend, outliers).
 - PYTHON_ANALYSIS: Executes custom calculations, rolling windows, feature engineering, regex pattern matching, text cleaning, reshaping, pivot logic, fuzzy matching, and complex transformations via Python.
 - VISUALIZATION: Generates Plotly charts.
@@ -99,7 +99,7 @@ The last worker to run was {worker_name}.
 Analyze the user's question and decide the next logical capability.
 If the question requires custom mathematical manipulation, regex, fuzzy matching, or complex transformations not easily done in SQL, choose PYTHON_ANALYSIS.
 If the question asks for statistical analysis like correlation, trend, distribution, or outliers, choose ANALYSIS.
-If the question asks for data retrieval, grouping, or general querying, choose SQL.
+If the question asks for data retrieval, grouping, joins, GMV, conversion rates, or general querying, choose SQL.
 
 Respond ONLY with a JSON object in this format:
 {{

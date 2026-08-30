@@ -18,13 +18,13 @@ CAPABILITIES: Dict[str, CapabilityDefinition] = {
     "SCHEMA": CapabilityDefinition(
         name="SCHEMA",
         entry_node="schema_profiler",
-        description="Extracts table structures, column definitions, and primary keys from the database.",
+        description="Extracts table structures, column definitions, and relationships from the active dataset (including multi-table marketplace schemas).",
         enabled=True
     ),
     "SQL": CapabilityDefinition(
         name="SQL",
         entry_node="planner",
-        description="Generates and executes SQL queries against the dataset to extract analytical results.",
+        description="Generates and executes SQL queries against the dataset to extract analytical results, including JOINs across marketplace tables.",
         enabled=True
     ),
     "ANALYSIS": CapabilityDefinition(

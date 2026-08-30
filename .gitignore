@@ -5,9 +5,17 @@
 
 # Python cache / builds
 __pycache__/
+**/__pycache__/
 *.py[cod]
+*$py.class
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 .venv/
+venv/
+env/
 
 # App-specific runtime directories
 scratch/*
@@ -18,6 +26,24 @@ uploads/*
 # Frontend build & packages
 frontend/node_modules/
 frontend/dist/
+frontend/.vite/
 
-# Logs
+# Logs & OS noise
 *.log
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Generated reports / temp artifacts
+*.pdf
+!screenshots/**
+
+# Local notebooks / secrets accidentals
+*.pem
+*.key
+credentials*.json

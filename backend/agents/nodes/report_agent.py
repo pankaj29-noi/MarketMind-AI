@@ -268,7 +268,7 @@ def _get_dynamic_system_prompt(mode: ReportMode, result_family: str) -> str:
     family_rules = SEMANTIC_CONTRACTS.get(result_family, SEMANTIC_CONTRACTS["UNKNOWN"])
     
     return f"""\
-You are the Lead Report Analyst for an Autonomous Data Analyst Agent.
+You are the Lead Report Analyst for MarketMind AI — an Agentic B2B Marketplace Intelligence Platform.
 Your ONLY job is to produce a single, valid JSON object that matches the schema below.
 
 OUTPUT RULES:

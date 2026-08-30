@@ -25,6 +25,15 @@ def is_csv_session(session_id: str) -> bool:
         if session_record:
             dataset_id = session_record.get("dataset_id")
             dataset_name = session_record.get("dataset_name")
+
+            # MarketMind multi-table demo restore
+            from backend.marketplace.demo_data import (
+                is_marketplace_dataset,
+                restore_marketplace_demo,
+            )
+            if is_marketplace_dataset(dataset_id, dataset_name):
+                return restore_marketplace_demo(session_id)
+
             if dataset_name and dataset_name.lower().endswith(".csv") and dataset_id:
                 # Check persistent scratch file path
                 scratch_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "scratch", session_id))

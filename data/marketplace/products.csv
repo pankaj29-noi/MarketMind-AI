@@ -1,0 +1,432 @@
+id,supplier_id,category_id,name,price,moq,stock
+1,68,18,Full Body Harness Model-564,2524.5,2,4516
+2,28,20,Industrial Rivet Gun - Standard,20694.11,100,3407
+3,13,20,Machine Screw Assortment - Premium,9388.81,5,3885
+4,12,10,3-Phase Motor - Economy,82215.28,50,1065
+5,8,17,Desk Organizer Set Model-675,3099.67,50,3464
+6,7,20,Machine Screw Assortment - Premium,14469.07,10,1267
+7,62,19,Industrial Exhaust Fan,297694.38,50,941
+8,74,13,TMT Steel Bar 12mm - Economy,718405.11,1,4988
+9,35,19,Split AC 1.5 Ton - Premium,597338.55,25,2783
+10,1,14,Drip Irrigation Kit - Standard,481437.98,100,570
+11,4,11,Mono Perc Solar Panel 550W Model-864,182980.68,100,3716
+12,21,14,Seed Drill Machine - Premium,660343.75,2,430
+13,21,11,Solar Mounting Structure,231396.6,100,3978
+14,57,18,Safety Goggles - Standard,2889.75,100,908
+15,76,13,Ceramic Floor Tile - Premium,38747.95,100,4909
+16,1,9,Hydraulic Press - Standard,652282.0,25,2371
+17,16,14,Tractor Disc Harrow - Economy,149464.23,100,4362
+18,30,20,Threaded Rod M16 - Premium,21551.02,1,3573
+19,59,9,CNC Lathe Machine - Premium,489458.92,100,3421
+20,15,13,Ceramic Floor Tile - Premium,146216.42,500,2964
+21,56,10,3-Phase Motor - Economy,500602.26,2,3242
+22,44,13,TMT Steel Bar 12mm - Standard,65061.01,2,4346
+23,25,17,Whiteboard Marker Pack - Standard,3703.78,10,1421
+24,20,18,High Visibility Vest - Standard,15717.32,500,4618
+25,58,18,High Visibility Vest Model-678,24275.78,50,1236
+26,9,16,Knitted Jersey Cloth - Premium,676910.78,1,2883
+27,10,17,Whiteboard Marker Pack - Economy,9250.0,25,628
+28,12,19,Air Curtain Model-708,326902.43,1,3684
+29,25,18,Full Body Harness - Economy,23945.17,500,847
+30,11,14,Sprinkler System - Standard,33414.94,500,3599
+31,67,17,Desk Organizer Set - Premium,7108.19,100,2771
+32,77,19,Split AC 1.5 Ton - Premium,56165.19,2,4570
+33,50,19,Cooling Tower Fill Model-358,742306.72,50,667
+34,19,18,Full Body Harness - Economy,17735.41,2,2536
+35,49,17,Laser Toner Cartridge - Premium,16769.4,2,3468
+36,47,17,A4 Copier Paper Ream - Premium,5394.11,500,1572
+37,18,12,Stretch Wrap Film - Premium,2573.46,1,2758
+38,17,18,Fire Extinguisher ABC - Standard,20792.06,5,3585
+39,53,9,Industrial Conveyor - Standard,824154.87,25,3677
+40,69,12,Stretch Wrap Film - Economy,4890.7,500,3782
+41,49,13,AAC Block - Economy,821332.99,10,4953
+42,33,11,Mono Perc Solar Panel 550W - Economy,743018.29,2,4226
+43,37,10,3-Phase Motor - Standard,231981.69,5,3583
+44,29,10,Servo Drive,352750.14,100,4112
+45,31,14,Power Weeder - Premium,190974.26,50,811
+46,43,20,Stainless Anchor Fastener,20752.55,5,3842
+47,79,16,Cotton Grey Fabric,217646.95,5,4495
+48,78,20,Threaded Rod M16,5979.12,2,391
+49,54,12,HDPE Woven Sack Model-912,2815.9,500,4888
+50,3,17,Laser Toner Cartridge Model-627,3632.24,100,12
+51,46,18,Cut Resistant Gloves - Economy,16721.96,50,554
+52,70,17,Desk Organizer Set Model-905,9791.82,500,356
+53,50,19,Cooling Tower Fill,303626.23,2,2824
+54,14,12,Wooden Pallet - Premium,8839.86,50,1434
+55,60,19,Chiller Pump - Standard,689801.3,2,3749
+56,38,9,Hydraulic Press - Standard,752938.96,50,2540
+57,51,17,Desk Organizer Set - Premium,16190.17,25,2924
+58,43,9,Industrial Conveyor - Premium,371493.13,100,3602
+59,44,15,Epoxy Resin - Economy,312339.79,25,676
+60,55,20,Hex Bolt M12 Pack Model-540,4552.39,25,2631
+61,11,10,MCB Distribution Box - Premium,260625.5,100,1365
+62,57,20,Machine Screw Assortment,22794.6,100,2249
+63,8,19,Split AC 1.5 Ton - Economy,308909.96,5,255
+64,78,11,PV Combiner Box - Economy,29723.9,2,1933
+65,47,19,Cooling Tower Fill Model-492,27672.67,5,3685
+66,48,14,Power Weeder,487897.42,50,3260
+67,36,14,Drip Irrigation Kit,625363.28,500,4241
+68,72,15,Industrial Solvent Grade A - Premium,598476.53,10,2339
+69,63,20,Stainless Anchor Fastener - Standard,11328.46,500,719
+70,41,19,Chiller Pump,467565.08,25,2457
+71,23,11,Solar Charge Controller - Standard,103289.88,10,1137
+72,64,12,Corrugated Carton Box Model-469,11711.78,5,706
+73,40,10,Servo Drive - Economy,446912.45,100,4709
+74,17,10,MCB Distribution Box,382560.83,50,1051
+75,76,17,Office Chair Ergonomic - Standard,22772.27,1,1017
+76,20,17,Whiteboard Marker Pack - Standard,17747.84,50,4250
+77,11,13,Ready Mix Concrete Model-301,233392.21,25,4370
+78,65,10,Cable Tray Model-272,800374.7,5,1402
+79,80,19,Chiller Pump - Premium,716174.12,1,232
+80,6,10,Cable Tray Model-889,225067.82,10,4686
+81,80,15,Cleaning Chemical Concentrate - Economy,755664.0,25,2474
+82,32,16,Industrial Canvas - Premium,385594.48,1,1294
+83,54,16,Knitted Jersey Cloth - Standard,289262.65,5,2560
+84,41,20,Washers Assorted Kit - Premium,3312.62,50,4218
+85,14,17,Whiteboard Marker Pack - Economy,11267.42,5,793
+86,38,9,Air Compressor Model-984,355501.81,5,2682
+87,41,18,Cut Resistant Gloves - Standard,12892.38,500,2527
+88,3,16,Cotton Grey Fabric Model-502,388727.46,10,1762
+89,46,18,Safety Helmet ISI - Premium,22064.37,500,2340
+90,2,17,A4 Copier Paper Ream - Standard,18201.33,100,2997
+91,52,9,CNC Lathe Machine Model-683,165577.81,25,602
+92,65,15,PVC Stabilizer Model-882,237870.62,2,1054
+93,51,10,MCB Distribution Box - Premium,474223.39,50,1181
+94,78,12,Wooden Pallet Model-511,1020.9,50,3880
+95,59,17,Office Chair Ergonomic Model-720,23287.65,50,1331
+96,79,15,Cleaning Chemical Concentrate - Premium,504726.9,500,4611
+97,61,13,OPC Cement 53 Grade - Premium,572784.36,100,4781
+98,4,13,AAC Block - Premium,822015.03,10,420
+99,62,18,Cut Resistant Gloves Model-636,9535.75,10,258
+100,15,18,Cut Resistant Gloves - Economy,3828.21,10,3361
+101,79,17,Filing Cabinet Steel,12991.15,50,3918
+102,49,17,Whiteboard Marker Pack - Economy,8591.06,50,2165
+103,62,18,Cut Resistant Gloves - Premium,5660.43,25,2367
+104,27,20,Washers Assorted Kit - Economy,8752.64,25,2357
+105,74,10,Cable Tray - Economy,761412.03,100,2827
+106,38,11,Mono Perc Solar Panel 550W,294507.03,500,2100
+107,62,20,Stainless Anchor Fastener Model-306,14072.35,25,1124
+108,79,10,Cable Tray - Standard,206202.96,10,1907
+109,13,9,Air Compressor - Economy,85598.09,5,42
+110,21,17,Filing Cabinet Steel - Economy,5026.43,25,2631
+111,8,13,OPC Cement 53 Grade Model-767,197502.34,1,1434
+112,23,15,Industrial Solvent Grade A - Economy,669798.34,5,2371
+113,2,9,Industrial Conveyor Model-681,91339.49,50,2331
+114,70,16,Nonwoven Geotextile - Standard,723423.12,500,2235
+115,15,12,Kraft Paper Roll - Economy,17979.02,1,2761
+116,73,13,Waterproofing Membrane - Standard,149294.35,100,3503
+117,42,17,A4 Copier Paper Ream,3558.27,50,2032
+118,34,9,Air Compressor - Economy,640730.09,50,2473
+119,74,18,Safety Helmet ISI - Premium,1600.0,2,3812
+120,21,13,Ceramic Floor Tile Model-802,784651.65,25,961
+121,38,19,Cooling Tower Fill - Standard,186376.44,5,3917
+122,59,11,PV Combiner Box - Premium,353556.4,500,4403
+123,28,19,Industrial Exhaust Fan Model-796,742183.83,2,4304
+124,68,16,Industrial Canvas,779670.41,2,505
+125,65,17,Office Chair Ergonomic Model-686,8236.54,500,952
+126,27,19,Chiller Pump - Economy,77436.76,500,455
+127,17,16,Nonwoven Geotextile - Economy,479389.92,500,2524
+128,3,20,Industrial Rivet Gun,14478.87,1,3470
+129,9,14,Sprinkler System,838218.74,500,259
+130,53,13,TMT Steel Bar 12mm - Standard,650988.66,100,3067
+131,58,15,PVC Stabilizer,580368.39,5,2848
+132,23,10,Power Transformer Model-502,108375.92,10,28
+133,39,9,Air Compressor Model-789,360595.21,100,1881
+134,59,12,Kraft Paper Roll - Premium,21886.44,2,263
+135,54,19,Air Curtain,204680.25,2,826
+136,5,18,Safety Goggles,1153.71,500,1919
+137,28,17,A4 Copier Paper Ream Model-243,5892.33,50,4730
+138,42,18,Cut Resistant Gloves - Standard,13055.21,100,2461
+139,8,13,AAC Block - Standard,532150.27,100,4553
+140,7,16,Denim Fabric Roll - Economy,667966.04,50,3410
+141,20,15,Sodium Hydroxide Flakes - Standard,641290.52,500,1974
+142,39,12,HDPE Woven Sack - Economy,14081.53,100,4565
+143,18,17,Filing Cabinet Steel - Premium,16185.31,500,3039
+144,69,10,Cable Tray - Standard,43948.4,100,4955
+145,6,18,Safety Helmet ISI Model-292,13993.32,500,1711
+146,39,14,Tractor Disc Harrow - Standard,817771.61,2,3923
+147,78,12,HDPE Woven Sack - Economy,13824.38,25,3118
+148,69,16,Industrial Canvas - Premium,222438.15,500,3817
+149,61,10,MCB Distribution Box - Premium,266086.78,1,4608
+150,19,12,Corrugated Carton Box Model-367,14499.62,100,2418
+151,26,11,Solar Charge Controller - Economy,484385.62,10,4090
+152,44,17,Whiteboard Marker Pack - Economy,16060.28,500,3775
+153,46,11,String Inverter 5kW Model-243,415145.63,1,4292
+154,10,9,Milling Machine,350621.53,10,556
+155,20,20,Hex Bolt M12 Pack Model-323,1558.23,500,3996
+156,1,9,Welding Machine - Economy,10221.55,25,4388
+157,3,13,AAC Block - Economy,685271.62,5,876
+158,68,10,Control Panel Board - Standard,526870.75,25,2903
+159,51,13,OPC Cement 53 Grade - Economy,390229.23,10,1850
+160,11,13,Waterproofing Membrane,79611.4,100,3089
+161,61,17,A4 Copier Paper Ream,2113.02,100,2713
+162,13,18,Fire Extinguisher ABC - Standard,21709.52,500,2220
+163,10,9,Milling Machine Model-387,479048.86,1,1469
+164,3,14,Drip Irrigation Kit - Standard,639453.46,100,630
+165,21,13,AAC Block Model-346,709477.78,100,4428
+166,50,14,Threshing Machine,425748.8,50,439
+167,56,10,Control Panel Board,289602.75,100,2673
+168,35,9,Air Compressor - Standard,302536.15,100,3537
+169,75,11,PV Combiner Box,656376.47,25,2018
+170,10,20,Hex Bolt M12 Pack - Standard,19608.06,5,3191
+171,47,14,Tractor Disc Harrow,801524.75,500,2948
+172,14,13,TMT Steel Bar 12mm - Standard,366417.94,100,846
+173,12,9,Industrial Conveyor,507446.33,50,3155
+174,38,9,Air Compressor,616158.54,10,4685
+175,22,17,Laser Toner Cartridge - Standard,7563.23,500,1195
+176,22,10,Servo Drive - Economy,254894.45,2,2958
+177,32,13,Waterproofing Membrane - Economy,504796.37,10,3750
+178,18,10,MCB Distribution Box - Economy,282484.8,100,2699
+179,43,16,Knitted Jersey Cloth Model-935,115835.38,50,4941
+180,26,20,Industrial Rivet Gun - Standard,24219.69,25,4022
+181,32,18,Full Body Harness - Premium,9853.73,2,4619
+182,76,12,Wooden Pallet Model-284,18193.97,10,3591
+183,9,13,Ceramic Floor Tile - Economy,118431.38,25,1982
+184,20,13,Waterproofing Membrane - Economy,63009.27,500,4769
+185,69,15,Adhesive Compound - Economy,462166.88,50,4398
+186,11,18,Safety Helmet ISI - Standard,8907.47,1,4613
+187,52,19,Cooling Tower Fill - Economy,90186.98,2,2119
+188,66,12,HDPE Woven Sack Model-631,14402.12,500,3064
+189,60,15,Cleaning Chemical Concentrate Model-702,128260.58,1,3954
+190,38,10,Servo Drive,706645.39,5,2853
+191,44,13,Ceramic Floor Tile - Standard,443019.44,50,3900
+192,57,10,Cable Tray - Economy,271175.22,25,366
+193,15,20,Hex Bolt M12 Pack - Premium,16944.63,5,1998
+194,23,17,Desk Organizer Set - Premium,23963.64,10,3318
+195,24,19,Industrial Exhaust Fan - Economy,336335.68,10,3682
+196,55,18,Safety Goggles - Standard,18820.52,2,4729
+197,69,10,Control Panel Board - Premium,167633.57,2,2149
+198,63,19,Air Curtain - Premium,507485.66,100,4808
+199,45,10,MCB Distribution Box - Economy,524815.67,25,4834
+200,18,10,MCB Distribution Box - Standard,259677.2,5,3058
+201,19,20,Threaded Rod M16 - Economy,14391.41,100,1521
+202,69,16,Industrial Canvas - Standard,471742.45,500,2366
+203,24,11,Solar Charge Controller - Economy,526555.57,50,78
+204,18,16,Polyester Yarn - Economy,819260.15,500,3351
+205,63,19,Ductable AC Unit - Economy,415471.28,2,4631
+206,29,9,Industrial Conveyor - Premium,191233.18,25,1377
+207,73,16,Industrial Canvas - Economy,467334.8,2,4691
+208,35,10,Power Transformer - Premium,460805.57,1,3615
+209,28,17,Filing Cabinet Steel - Standard,24982.85,500,2152
+210,12,14,Power Weeder,659320.56,10,1719
+211,76,20,Washers Assorted Kit Model-459,4191.24,5,1692
+212,8,12,Wooden Pallet Model-459,13492.28,50,2397
+213,74,13,Ready Mix Concrete Model-978,837667.23,2,1110
+214,8,15,Sodium Hydroxide Flakes - Standard,596257.33,5,2045
+215,42,11,String Inverter 5kW - Economy,416116.5,25,3393
+216,58,15,Industrial Solvent Grade A,342512.73,25,3023
+217,63,16,Denim Fabric Roll,738591.26,2,3755
+218,46,19,Split AC 1.5 Ton Model-914,338148.83,100,1735
+219,35,16,Denim Fabric Roll - Premium,287191.22,5,4637
+220,44,16,Industrial Canvas,39194.6,500,133
+221,21,10,Servo Drive,843063.73,100,1657
+222,17,20,Washers Assorted Kit - Standard,21921.05,2,2952
+223,11,13,Ready Mix Concrete - Standard,44161.42,25,1918
+224,12,15,Cleaning Chemical Concentrate,181525.99,2,1087
+225,29,18,Fire Extinguisher ABC - Economy,17405.15,2,3459
+226,17,20,Industrial Rivet Gun - Standard,18282.55,2,845
+227,48,14,Seed Drill Machine - Economy,657475.39,5,1170
+228,68,10,Power Transformer Model-108,552569.68,500,2876
+229,28,20,Washers Assorted Kit - Standard,15421.1,500,1779
+230,13,10,Control Panel Board,501199.39,100,2879
+231,41,15,Epoxy Resin - Premium,547980.79,10,4533
+232,77,18,High Visibility Vest - Premium,17277.38,25,1683
+233,78,17,Desk Organizer Set - Economy,1411.5,10,4054
+234,15,15,Epoxy Resin Model-611,60499.55,1,2958
+235,17,14,Power Weeder Model-981,357820.87,5,3858
+236,3,10,Power Transformer,222968.16,1,495
+237,65,15,Sodium Hydroxide Flakes Model-743,652078.43,100,3295
+238,69,10,Power Transformer - Standard,235955.96,25,647
+239,27,17,Office Chair Ergonomic - Premium,15875.64,2,2540
+240,56,20,Washers Assorted Kit - Standard,2201.01,100,950
+241,79,16,Nonwoven Geotextile - Premium,566217.73,5,978
+242,18,9,Milling Machine - Standard,422026.53,50,4284
+243,34,17,Office Chair Ergonomic - Standard,21842.83,2,240
+244,55,14,Seed Drill Machine,223617.76,2,4064
+245,66,16,Denim Fabric Roll - Economy,730476.91,5,3012
+246,33,11,Mono Perc Solar Panel 550W,194259.5,1,360
+247,32,9,CNC Lathe Machine - Premium,325625.11,5,1466
+248,71,9,Milling Machine - Economy,190954.34,10,3409
+249,41,20,Machine Screw Assortment,3029.05,1,1469
+250,67,12,Corrugated Carton Box,21657.5,25,2681
+251,71,10,Servo Drive - Premium,170690.38,25,1987
+252,48,16,Nonwoven Geotextile - Standard,622633.97,10,1233
+253,53,9,CNC Lathe Machine Model-338,294558.18,1,2744
+254,49,9,Milling Machine - Premium,88491.07,10,3439
+255,8,16,Polyester Yarn - Premium,79208.69,10,4257
+256,48,15,PVC Stabilizer,493717.92,5,3230
+257,76,10,Power Transformer - Economy,563127.97,5,1939
+258,34,13,Ready Mix Concrete - Economy,595661.66,50,2605
+259,35,16,Polyester Yarn - Standard,115824.65,2,1273
+260,22,10,Servo Drive - Premium,345624.69,50,1700
+261,40,16,Knitted Jersey Cloth,76994.19,25,4942
+262,28,9,Industrial Conveyor,604527.11,50,3246
+263,7,17,Laser Toner Cartridge - Premium,4388.0,100,3704
+264,71,17,Office Chair Ergonomic - Economy,19855.55,2,97
+265,29,9,Hydraulic Press - Economy,316497.95,2,4770
+266,34,18,Safety Helmet ISI,16167.37,5,753
+267,16,14,Tractor Disc Harrow,142915.63,100,3235
+268,4,16,Knitted Jersey Cloth - Economy,147010.21,10,1533
+269,36,13,Ceramic Floor Tile,522048.48,10,2417
+270,53,16,Nonwoven Geotextile,74700.16,100,1124
+271,26,15,Cleaning Chemical Concentrate Model-916,211888.22,1,3133
+272,46,20,Industrial Rivet Gun - Economy,14163.0,50,3181
+273,24,13,OPC Cement 53 Grade Model-426,186284.31,25,479
+274,68,16,Denim Fabric Roll Model-885,849664.94,5,820
+275,31,12,Kraft Paper Roll,23697.67,100,2906
+276,23,11,String Inverter 5kW - Premium,685307.76,50,4846
+277,46,9,Welding Machine - Standard,478708.09,10,4032
+278,40,17,Office Chair Ergonomic,5853.95,10,163
+279,62,17,A4 Copier Paper Ream Model-439,3305.71,5,2650
+280,3,9,Hydraulic Press - Standard,658245.37,50,594
+281,51,14,Sprinkler System - Premium,256605.12,5,1290
+282,56,20,Washers Assorted Kit - Premium,24220.14,50,1828
+283,76,19,Industrial Exhaust Fan - Premium,623935.63,25,1043
+284,1,11,PV Combiner Box - Economy,723165.81,1,1491
+285,41,18,Fire Extinguisher ABC Model-326,12429.82,50,637
+286,45,12,Kraft Paper Roll,16767.11,50,3658
+287,34,9,Hydraulic Press,298006.42,2,10
+288,50,9,Air Compressor - Economy,823741.19,100,4039
+289,45,15,Adhesive Compound,704511.61,10,1332
+290,10,16,Cotton Grey Fabric,271011.56,2,607
+291,22,14,Power Weeder,465057.26,2,2768
+292,79,18,Safety Goggles,16358.2,100,1286
+293,13,9,Industrial Conveyor - Standard,347976.49,25,2306
+294,31,13,OPC Cement 53 Grade - Economy,486068.57,500,1258
+295,47,9,CNC Lathe Machine,250472.85,500,1635
+296,4,10,Control Panel Board - Premium,830502.48,500,946
+297,51,13,Ceramic Floor Tile - Premium,77602.68,100,1514
+298,49,14,Seed Drill Machine - Economy,38067.69,500,3809
+299,29,13,Ready Mix Concrete,128588.4,2,702
+300,45,19,Air Curtain Model-523,193501.72,1,3171
+301,54,17,Desk Organizer Set - Economy,5929.27,25,646
+302,5,15,Adhesive Compound Model-684,680412.72,5,985
+303,23,16,Polyester Yarn - Standard,107389.17,100,641
+304,56,19,Industrial Exhaust Fan - Standard,709016.78,25,2619
+305,9,20,Hex Bolt M12 Pack Model-497,8186.86,25,4257
+306,2,16,Industrial Canvas Model-738,444249.32,100,921
+307,20,15,Epoxy Resin Model-680,495338.12,2,865
+308,13,18,Full Body Harness Model-988,21953.44,25,3137
+309,63,19,Air Curtain - Economy,31990.2,25,3301
+310,80,11,Solar Mounting Structure - Economy,33109.34,50,1946
+311,61,9,Industrial Conveyor,287285.49,25,2547
+312,63,13,Waterproofing Membrane,826626.27,10,1100
+313,57,13,Ready Mix Concrete - Economy,514291.52,2,1539
+314,28,16,Knitted Jersey Cloth - Economy,645605.38,50,460
+315,21,17,A4 Copier Paper Ream Model-418,19523.88,1,1423
+316,26,12,Corrugated Carton Box,22954.88,10,2244
+317,60,14,Sprinkler System,579046.03,10,3051
+318,77,16,Knitted Jersey Cloth - Economy,498910.18,50,2820
+319,34,11,PV Combiner Box,242416.21,100,406
+320,74,11,String Inverter 5kW - Standard,550325.8,10,2204
+321,53,19,Air Curtain,403061.51,5,1418
+322,2,18,Cut Resistant Gloves Model-358,7671.22,25,3471
+323,45,15,PVC Stabilizer - Standard,396773.31,100,4788
+324,1,10,Power Transformer - Premium,477304.33,25,2445
+325,14,19,Ductable AC Unit - Premium,840108.57,50,2268
+326,39,13,TMT Steel Bar 12mm Model-253,650688.41,1,4915
+327,41,15,Cleaning Chemical Concentrate,557142.17,25,2125
+328,52,15,PVC Stabilizer,495632.69,10,2811
+329,29,20,Washers Assorted Kit - Economy,16813.12,25,1392
+330,72,19,Industrial Exhaust Fan,400243.12,25,4579
+331,43,11,PV Combiner Box - Standard,302087.59,25,3444
+332,48,14,Seed Drill Machine - Premium,394276.97,2,3854
+333,75,9,Welding Machine,401465.9,10,4099
+334,49,10,Power Transformer - Economy,46094.57,5,1125
+335,44,12,Bubble Wrap Roll - Economy,21566.73,5,662
+336,43,16,Industrial Canvas - Premium,539378.95,1,3703
+337,27,13,TMT Steel Bar 12mm - Standard,416217.09,2,1060
+338,56,18,High Visibility Vest - Economy,11961.14,1,309
+339,26,17,Laser Toner Cartridge,18933.35,10,146
+340,1,19,Chiller Pump - Standard,192441.91,50,2556
+341,14,11,Lithium Battery Pack Model-615,260301.91,2,374
+342,38,13,Ceramic Floor Tile Model-845,506974.98,50,3552
+343,18,19,Cooling Tower Fill - Premium,637635.73,5,3304
+344,30,9,Hydraulic Press - Standard,179630.02,1,4830
+345,22,17,A4 Copier Paper Ream,16026.01,1,4865
+346,14,9,Milling Machine,41142.56,2,3414
+347,49,16,Cotton Grey Fabric - Premium,403315.73,5,1683
+348,2,20,Machine Screw Assortment,6785.93,5,3431
+349,66,10,Cable Tray,240408.35,2,4077
+350,78,12,Stretch Wrap Film - Premium,24329.34,50,3356
+351,21,13,OPC Cement 53 Grade - Economy,773816.58,500,2708
+352,1,12,Corrugated Carton Box,20889.04,500,1221
+353,66,10,3-Phase Motor,769076.76,10,3741
+354,34,13,Ceramic Floor Tile,691229.68,1,2380
+355,41,14,Power Weeder,80884.45,1,79
+356,22,11,Solar Charge Controller - Economy,811832.52,25,761
+357,44,14,Drip Irrigation Kit - Economy,340302.65,500,2226
+358,62,15,PVC Stabilizer - Standard,96231.11,1,1305
+359,54,10,Power Transformer Model-594,576682.41,5,3110
+360,79,14,Tractor Disc Harrow - Standard,410695.25,500,925
+361,57,15,Industrial Solvent Grade A - Premium,556779.29,1,4299
+362,74,20,Washers Assorted Kit - Standard,16762.62,50,4252
+363,80,17,A4 Copier Paper Ream - Standard,16609.58,100,1217
+364,79,17,A4 Copier Paper Ream - Standard,11758.76,500,1354
+365,63,10,MCB Distribution Box - Premium,824627.77,1,4152
+366,71,12,HDPE Woven Sack - Economy,2016.82,500,4694
+367,12,16,Knitted Jersey Cloth - Premium,101033.02,500,145
+368,52,10,Servo Drive Model-136,466801.61,2,4949
+369,39,18,Fire Extinguisher ABC - Standard,11432.39,50,2976
+370,29,9,Air Compressor Model-439,652338.83,500,2976
+371,58,20,Hex Bolt M12 Pack - Standard,8910.72,25,4486
+372,48,17,Laser Toner Cartridge,12335.93,100,876
+373,79,13,TMT Steel Bar 12mm,790694.29,100,1766
+374,25,16,Industrial Canvas,643613.37,1,4823
+375,58,10,Servo Drive Model-774,812768.34,5,4086
+376,68,9,Milling Machine Model-149,795021.74,500,4164
+377,75,11,String Inverter 5kW - Standard,88155.33,50,4129
+378,54,15,Adhesive Compound - Standard,232665.46,50,2409
+379,18,16,Polyester Yarn Model-522,595057.14,25,4487
+380,71,14,Threshing Machine - Standard,178374.33,25,2828
+381,17,19,Chiller Pump - Standard,428383.84,50,945
+382,72,14,Power Weeder Model-696,801281.2,100,4373
+383,55,13,OPC Cement 53 Grade,21627.53,5,434
+384,8,19,Industrial Exhaust Fan - Standard,836005.0,25,1199
+385,38,9,Hydraulic Press Model-871,27605.58,500,839
+386,72,18,Cut Resistant Gloves Model-860,12797.51,25,384
+387,50,15,PVC Stabilizer - Premium,820963.36,1,106
+388,33,20,Stainless Anchor Fastener - Economy,22791.59,50,4820
+389,78,17,Office Chair Ergonomic - Standard,4476.78,2,1531
+390,66,11,Mono Perc Solar Panel 550W,364317.37,25,1065
+391,75,11,Solar Charge Controller - Premium,396461.69,5,327
+392,42,11,Solar Mounting Structure Model-152,716692.51,25,4018
+393,71,18,Full Body Harness - Premium,23926.84,2,4138
+394,54,11,Solar Mounting Structure - Economy,78289.93,10,1747
+395,43,19,Cooling Tower Fill - Premium,185795.73,500,4598
+396,2,19,Split AC 1.5 Ton - Premium,378900.31,10,326
+397,42,19,Ductable AC Unit,328086.66,25,202
+398,48,17,Desk Organizer Set Model-922,1144.1,10,2624
+399,11,17,A4 Copier Paper Ream Model-271,15691.98,10,1746
+400,55,19,Split AC 1.5 Ton Model-310,704462.06,100,590
+401,20,20,Hex Bolt M12 Pack - Premium,1877.54,5,2063
+402,10,17,Desk Organizer Set - Standard,10220.44,500,3313
+403,41,15,Industrial Solvent Grade A,454678.99,2,4797
+404,10,9,Industrial Conveyor,246467.63,25,4968
+405,37,10,Servo Drive - Economy,698830.7,1,3882
+406,69,11,String Inverter 5kW - Economy,677285.36,25,1180
+407,48,13,OPC Cement 53 Grade Model-666,120296.58,1,41
+408,77,18,Safety Goggles Model-650,7652.04,50,1734
+409,66,15,Epoxy Resin - Standard,187786.66,25,1591
+410,24,10,Cable Tray Model-918,724435.62,500,4502
+411,38,10,Cable Tray - Premium,83607.31,500,2710
+412,17,14,Threshing Machine - Standard,85173.29,2,1585
+413,63,14,Power Weeder Model-436,560560.0,5,4633
+414,47,18,Full Body Harness - Standard,6192.07,10,3572
+415,47,13,TMT Steel Bar 12mm - Premium,746221.27,500,3648
+416,40,14,Power Weeder,149528.27,2,2298
+417,69,11,String Inverter 5kW,618352.45,1,4154
+418,4,19,Air Curtain - Economy,653854.84,10,300
+419,34,17,Desk Organizer Set - Economy,3758.39,100,1829
+420,38,18,Cut Resistant Gloves Model-575,9949.79,1,1956
+421,1,9,Industrial Water Pump 5HP,15000,1,120
+422,2,9,High Pressure Industrial Pump,28500,1,45
+423,3,9,Centrifugal Water Pump 3HP,9800,2,200
+424,4,9,Submersible Industrial Water Pump,22000,1,60
+425,5,12,Corrugated Packaging Boxes Bulk Pack,45,100,5000
+426,6,12,Industrial Packaging Carton Boxes,62,50,3000
+427,7,12,Bulk Packaging Material Kit,890,10,400
+428,8,14,Agricultural Threshing Machine,125000,1,25
+429,9,14,Agricultural Power Weeder Machine,48000,1,40
+430,10,14,Agricultural Seed Drill Machine,95000,1,18
+431,11,14,Farm Agricultural Cultivator Machine,72000,1,30

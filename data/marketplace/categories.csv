@@ -1,0 +1,21 @@
+id,name,parent_id
+1,Industrial & Manufacturing,
+2,Energy & Utilities,
+3,Construction & Infrastructure,
+4,Agriculture,
+5,Chemicals & Materials,
+6,Textiles & Apparel,
+7,Office & Workplace,
+8,Safety & PPE,
+9,Industrial Equipment,1
+10,Electrical Equipment,1
+11,Solar Products,2
+12,Packaging Materials,1
+13,Construction Materials,3
+14,Agricultural Equipment,4
+15,Industrial Chemicals,5
+16,Textile Fabrics,6
+17,Office Supplies,7
+18,Safety Equipment,8
+19,HVAC & Cooling,3
+20,Fasteners & Hardware,1

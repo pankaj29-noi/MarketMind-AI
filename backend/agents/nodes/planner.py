@@ -7,7 +7,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 logger = logging.getLogger(__name__)
 
-PLANNER_SYSTEM_PROMPT = """You are the Lead Data Analyst Planner for an Autonomous Data Analyst Agent.
+PLANNER_SYSTEM_PROMPT = """You are the Lead Data Analyst Planner for MarketMind AI — an Agentic B2B Marketplace Intelligence Platform.
 Your job is to analyze the user's natural language question and the schema of the active dataset, and produce a structured, step-by-step analysis plan.
 
 CRITICAL RULES:
@@ -16,12 +16,19 @@ CRITICAL RULES:
    - Do NOT write Python code to filter, join, or aggregate data. DuckDB SQL is highly optimized and runs in-memory.
    - For chart generation requests, set approach="sql" and expected_output_type="chart". The system will execute the SQL query first and then automatically run a dedicated Python script to plot the resulting data.
 2. CONSTRAIN EXECUTION:
-   - All SQL queries will run against the active table name: "{table_name}"
+   - If the schema is MULTI-TABLE (marketplace), plan JOINs across the listed tables using the provided relationships. Do NOT invent a single table named "{table_name}" when multiple tables exist.
+   - If the schema is a single table, all SQL queries will run against the active table name: "{table_name}"
    - Keep the steps clear and minimal.
-3. DATE & TIMESTAMP HANDLING IN DUCKDB:
+3. MARKETPLACE DOMAIN HINTS (when multi-table):
+   - GMV / order value → use orders.amount (optionally join buyers/suppliers/products/categories).
+   - Lead conversion → compare leads (e.g. status='won') to leads volume, often joined to products/categories.
+   - Supplier response time → suppliers.response_time_hours.
+   - Demand → leads.quantity or lead counts by product/category.
+4. DATE & TIMESTAMP HANDLING IN DUCKDB:
    - Carefully inspect column types and sample values in the schema context.
    - If a VARCHAR column contains dates or timestamps (e.g., "2/24/2003 0:00"), plan to parse it using `strptime(column_name, 'format_string')` inside the SQL query before applying any date operators (like `date_trunc` or `strftime`).
    - Determine the correct `format_string` based on the provided sample values (e.g. '%m/%d/%Y %H:%M' for '2/24/2003 0:00', or '%Y-%m-%d' for '2003-02-24').
+   - For marketplace orders.order_date (YYYY-MM-DD) and leads.created_at, cast/parse appropriately before date_trunc.
 
 You must return a JSON object with the following fields:
 {{
@@ -53,19 +60,9 @@ def planner_node(state: AgentState) -> Dict[str, Any]:
     error_msg = None
     updates = {}
     
-    # Construct the schema description for the LLM
-    columns_desc = ""
-    for col in schema_profile.get("columns", []):
-        samples = col.get("sample_values", [])
-        samples_str = f" | Samples: {samples}" if samples else ""
-        columns_desc += f"- {col['name']} ({col['dtype']}){samples_str}\n"
-    
-    schema_context = f"""
-Dataset Table Name: {table_name}
-Total Rows: {schema_profile.get('row_count', 'unknown')}
-Columns:
-{columns_desc}
-"""
+    from backend.marketplace.demo_data import format_schema_context_for_llm
+
+    schema_context = format_schema_context_for_llm(schema_profile or {}, fallback_table=table_name)
 
     messages = [
         SystemMessage(content=PLANNER_SYSTEM_PROMPT.format(table_name=table_name)),
@@ -120,9 +117,42 @@ Columns:
             "approach": "sql",
             "expected_output_type": "dataframe"
         }
+        from backend.utils.provider_errors import (
+            is_provider_auth_or_config_error,
+            provider_error_user_message,
+        )
+        from backend.marketplace.demo_data import MARKETPLACE_DATASET_ID
+
         error_str = error_msg.lower()
-        if "429" in error_str or "resource_exhausted" in error_str or "rate limit" in error_str:
-            logger.error("Provider chain exhausted due to rate limit. Skipping agent retry loop.")
+        is_rate_limited = (
+            "429" in error_str
+            or "resource_exhausted" in error_str
+            or "rate limit" in error_str
+        )
+        is_provider = is_rate_limited or is_provider_auth_or_config_error(error_msg)
+        dataset_id = state.get("dataset_id")
+
+        # Marketplace demo: keep a usable SQL plan so code_generator can apply
+        # deterministic DuckDB fallbacks when the LLM key is missing/invalid.
+        if is_provider and dataset_id == MARKETPLACE_DATASET_ID:
+            logger.warning(
+                "Planner LLM unavailable for marketplace demo — continuing with SQL fallback plan."
+            )
+            updates = {
+                "plan": {
+                    "steps": [
+                        "Answer using marketplace DuckDB tables "
+                        "(categories, suppliers, buyers, products, leads, orders)."
+                    ],
+                    "approach": "sql",
+                    "expected_output_type": "dataframe",
+                },
+                "expected_output_type": "dataframe",
+                "generated_code": None,
+                "execution_success": False,
+            }
+        elif is_provider:
+            logger.error("Provider chain exhausted. Skipping agent retry loop.")
             updates = {
                 "plan": fallback_plan,
                 "expected_output_type": "dataframe",
@@ -130,7 +160,7 @@ Columns:
                 "execution_success": False,
                 "failure_summary": {
                     "failure_type": "provider_error",
-                    "error_message": "Provider chain exhausted due to rate limit.",
+                    "error_message": provider_error_user_message(error_msg),
                     "code_context": "",
                     "expected_vs_actual": error_msg
                 }

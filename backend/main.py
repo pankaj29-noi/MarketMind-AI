@@ -48,23 +48,51 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing DuckDB session manager...")
     _ = session_manager
     
-    # 2. Initialize application database tables
+    # 2. Initialize application database tables (soft-fail if Postgres is down)
     logger.info("Initializing application database tables...")
-    init_db()
+    try:
+        init_db()
+    except Exception as e:
+        logger.warning(f"Database init skipped/failed: {e}")
     
-    # 3. Retrieve PG connection pool (verifies database connectivity via pool.wait())
-    logger.info("Initializing PostgreSQL connection pool...")
-    db_pool = get_pool()
-    
-    # 4. Compile LangGraph agent workflow with Postgres checkpointer
-    logger.info("Compiling LangGraph agent workflow with checkpointer...")
-    agent_graph = create_agent_graph(db_pool)
-    
+    # 3–4. PostgreSQL pool + analytics LangGraph
+    # Marketplace demo + Lead Intelligence work with DuckDB alone.
+    # Analytics prefers Postgres checkpointer; falls back to in-memory MemorySaver.
+    agent_graph = None
+    db_pool = None
+    try:
+        logger.info("Initializing PostgreSQL connection pool...")
+        db_pool = get_pool()
+    except Exception as e:
+        logger.warning(
+            "PostgreSQL unavailable — analytics will use in-memory checkpointer; "
+            f"marketplace demo and Lead Intelligence still work. Error: {e}"
+        )
+        db_pool = None
+
+    try:
+        logger.info(
+            "Compiling LangGraph agent workflow "
+            f"({'PostgresSaver' if db_pool is not None else 'MemorySaver'})..."
+        )
+        agent_graph = create_agent_graph(db_pool)
+    except Exception as e:
+        logger.error(f"Failed to compile analytics agent with pool={db_pool is not None}: {e}")
+        if db_pool is not None:
+            try:
+                logger.warning("Retrying analytics agent with in-memory MemorySaver...")
+                agent_graph = create_agent_graph(None)
+            except Exception as e2:
+                logger.error(f"MemorySaver analytics agent also failed: {e2}")
+                agent_graph = None
+        else:
+            agent_graph = None
+
     # 5. Start the background session cleaner
     logger.info("Starting background session cleanup scheduler...")
     cleanup_task = asyncio.create_task(session_cleanup_scheduler())
     
-    logger.info("FastAPI backend startup procedures completed successfully.")
+    logger.info("FastAPI backend startup procedures completed.")
     
     yield
     
@@ -80,7 +108,12 @@ async def lifespan(app: FastAPI):
     logger.info("FastAPI backend shutdown completed.")
 
 # Initialize FastAPI App with Lifespan
-app = FastAPI(title="Autonomous Data Analyst Agent API", version="1.1", lifespan=lifespan)
+app = FastAPI(
+    title="MarketMind AI API",
+    description="Agentic B2B Marketplace Intelligence Platform",
+    version="1.2",
+    lifespan=lifespan,
+)
 
 # Enable CORS for Vite frontend
 app.add_middleware(
@@ -250,6 +283,179 @@ async def upload_csv(file: UploadFile = File(...)):
             except Exception as e:
                 logger.warning(f"Failed to delete temp file: {e}")
 
+
+@app.post("/marketplace/demo")
+async def load_marketplace_demo_endpoint():
+    """
+    Load the packaged MarketMind B2B marketplace demo dataset into a new DuckDB session.
+    Registers categories, suppliers, buyers, products, leads, and orders tables.
+    """
+    from backend.marketplace.demo_data import (
+        MARKETPLACE_DATASET_ID,
+        MARKETPLACE_DATASET_NAME,
+        load_marketplace_demo,
+        build_marketplace_schema_profile,
+    )
+
+    session_id = str(uuid.uuid4())
+    try:
+        result = load_marketplace_demo(session_id)
+        create_session(
+            session_id=session_id,
+            dataset_id=MARKETPLACE_DATASET_ID,
+            dataset_name=MARKETPLACE_DATASET_NAME,
+        )
+        # Warm schema profile for faster first analysis
+        try:
+            build_marketplace_schema_profile(session_id)
+        except Exception as schema_err:
+            logger.warning(f"Could not pre-build marketplace schema profile: {schema_err}")
+
+        return {
+            "session_id": result["session_id"],
+            "dataset_id": result["dataset_id"],
+            "dataset_name": result["dataset_name"],
+            "row_count": result["row_count"],
+            "columns": result["columns"],
+            "tables": result["tables"],
+            "table_stats": result["table_stats"],
+            "relationships": [
+                r["description"] for r in result.get("relationships", [])
+            ],
+        }
+    except FileNotFoundError as e:
+        logger.error(f"Marketplace demo data missing: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to load marketplace demo: {e}")
+        # Clean up partial DuckDB session
+        try:
+            session_manager.evict_session(session_id)
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=f"Failed to load marketplace demo: {str(e)}")
+
+
+class LeadAnalyzeRequest(BaseModel):
+    requirement: str
+    session_id: Optional[str] = None
+
+
+class FeedbackRequest(BaseModel):
+    run_id: str
+    rating: str  # helpful | not_helpful
+    comment: Optional[str] = None
+
+
+@app.post("/marketplace/lead/analyze")
+async def analyze_buyer_lead(request: LeadAnalyzeRequest):
+    """
+    Lead Intelligence: extract a buyer requirement, match marketplace products,
+    and return deterministically ranked suppliers via a dedicated LangGraph workflow.
+    """
+    requirement = (request.requirement or "").strip()
+    if not requirement:
+        raise HTTPException(status_code=400, detail="requirement must be a non-empty string.")
+
+    from backend.marketplace.lead.matching import ensure_marketplace_session
+    from backend.marketplace.lead.graph import run_lead_analysis
+    from backend.marketplace.observability import sanitize_error_message
+
+    try:
+        session_id = await asyncio.to_thread(
+            ensure_marketplace_session, request.session_id
+        )
+        result = await asyncio.to_thread(run_lead_analysis, session_id, requirement)
+        return result
+    except ValueError as e:
+        # Missing LLM keys etc. — return safe message without crashing
+        logger.error(f"Lead analysis configuration error: {e}")
+        raise HTTPException(status_code=500, detail=sanitize_error_message(str(e)) or "Configuration error")
+    except Exception as e:
+        logger.error(f"Lead analysis failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=sanitize_error_message(str(e)) or "Lead analysis failed",
+        )
+
+
+@app.post("/marketplace/feedback")
+async def submit_marketplace_feedback(request: FeedbackRequest):
+    """Record thumbs up/down feedback for a Lead Intelligence (or other) workflow run."""
+    from backend.marketplace.observability import save_workflow_feedback, sanitize_error_message
+
+    run_id = (request.run_id or "").strip()
+    if not run_id:
+        raise HTTPException(status_code=400, detail="run_id is required.")
+
+    rating = (request.rating or "").strip().lower()
+    if rating not in ("helpful", "not_helpful"):
+        raise HTTPException(status_code=400, detail="rating must be 'helpful' or 'not_helpful'.")
+
+    try:
+        saved = await asyncio.to_thread(
+            save_workflow_feedback,
+            run_id,
+            rating,
+            request.comment,
+        )
+        return {
+            "success": True,
+            "feedback": {
+                "id": saved.get("id"),
+                "run_id": saved.get("run_id"),
+                "rating": saved.get("rating"),
+                "comment": saved.get("comment"),
+            },
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Feedback save failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=sanitize_error_message(str(e)) or "Failed to save feedback",
+        )
+
+
+@app.get("/marketplace/observability/runs")
+async def get_observability_runs(limit: int = 50):
+    """Return recent workflow runs for Agent Monitoring."""
+    from backend.marketplace.observability import list_workflow_runs, serialize_run
+
+    try:
+        rows = await asyncio.to_thread(list_workflow_runs, limit)
+        return {"runs": [serialize_run(r) for r in rows]}
+    except Exception as e:
+        logger.error(f"Observability runs fetch failed: {e}")
+        return {"runs": []}
+
+
+@app.get("/marketplace/observability/summary")
+async def get_observability_summary_endpoint():
+    """Aggregate success/latency/feedback metrics for Agent Monitoring."""
+    from backend.marketplace.observability import get_observability_summary
+
+    try:
+        summary = await asyncio.to_thread(get_observability_summary)
+        return {"summary": summary}
+    except Exception as e:
+        logger.error(f"Observability summary failed: {e}")
+        return {
+            "summary": {
+                "total_runs": 0,
+                "complete_count": 0,
+                "failure_count": 0,
+                "running_count": 0,
+                "success_rate": 0.0,
+                "average_latency_ms": 0.0,
+                "total_feedback": 0,
+                "helpful_feedback_count": 0,
+                "helpful_feedback_rate": 0.0,
+            }
+        }
+
+
 @app.post("/analyze")
 async def analyze_data(request: AnalyzeRequest):
     """
@@ -267,10 +473,53 @@ async def analyze_data(request: AnalyzeRequest):
       "debug":   { "generated_code", "execution_mode", "execution_plan", "llm_reasoning" }
     }
     """
+    if agent_graph is None:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Analytics agent unavailable. Check backend logs. "
+                "If PostgreSQL setup failed, restart after fixing DATABASE_URL, "
+                "or ensure the MemorySaver fallback compiled successfully."
+            ),
+        )
+
     session_id = request.session_id
     question   = request.question
 
     session_record = get_session(session_id)
+    if not session_record:
+        # Postgres may be down or session only lives in DuckDB after demo load.
+        # Restore from the active in-memory DuckDB session when tables are present.
+        duck_session = session_manager.sessions.get(session_id)
+        if duck_session and duck_session.registered_tables:
+            from backend.marketplace.demo_data import (
+                MARKETPLACE_DATASET_ID,
+                MARKETPLACE_DATASET_NAME,
+                MARKETPLACE_TABLES,
+            )
+            tables = duck_session.registered_tables
+            if all(t in tables for t in MARKETPLACE_TABLES):
+                session_record = create_session(
+                    session_id=session_id,
+                    dataset_id=MARKETPLACE_DATASET_ID,
+                    dataset_name=MARKETPLACE_DATASET_NAME,
+                )
+                logger.info(
+                    "Restored marketplace session %s from in-memory DuckDB (Postgres miss).",
+                    session_id,
+                )
+            elif len(tables) == 1:
+                tid = tables[0]
+                session_record = create_session(
+                    session_id=session_id,
+                    dataset_id=tid,
+                    dataset_name=tid,
+                )
+                logger.info(
+                    "Restored single-table session %s from in-memory DuckDB (Postgres miss).",
+                    session_id,
+                )
+
     if not session_record:
         raise HTTPException(status_code=404, detail="Session not found.")
 

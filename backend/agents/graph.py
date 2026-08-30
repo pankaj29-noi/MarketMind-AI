@@ -106,7 +106,6 @@ def create_agent_graph(pool) -> Any:
     )
     
     # Configure Checkpointer
-    logger.info("Setting up LangGraph PostgresSaver checkpointer...")
     from langgraph.checkpoint.base import JsonPlusSerializer
     from backend.agents.schemas import ConfidenceLevel, ChartType
     
@@ -115,9 +114,15 @@ def create_agent_graph(pool) -> Any:
         [ConfidenceLevel, ChartType]
     )
     
-    # Initialize checkpointer and run setup DDL to create tables if they do not exist
-    checkpointer = PostgresSaver(pool, serde=serde)
-    checkpointer.setup()
+    if pool is None:
+        # Demo / offline fallback when PostgreSQL is unavailable
+        from langgraph.checkpoint.memory import MemorySaver
+        logger.warning("No Postgres pool provided — using in-memory LangGraph checkpointer.")
+        checkpointer = MemorySaver()
+    else:
+        logger.info("Setting up LangGraph PostgresSaver checkpointer...")
+        checkpointer = PostgresSaver(pool, serde=serde)
+        checkpointer.setup()
     
     # Compile graph
     compiled_graph = workflow.compile(checkpointer=checkpointer)

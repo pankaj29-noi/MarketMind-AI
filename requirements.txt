@@ -12,6 +12,7 @@ pandas>=2.0.0
 python-dotenv>=1.0.0
 pydantic>=2.0.0
 python-multipart>=0.0.6
+charset-normalizer>=3.0.0
 mcp>=1.0.0
 langgraph-checkpoint-postgres>=1.0.0
 langchain-mcp-adapters>=0.3.0
