@@ -1,14 +1,22 @@
-import json
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 from backend.agents.state import AgentState, get_effective_question
-from backend.config import get_llm, use_analytics_demo_fallback
+from backend.config import use_analytics_demo_fallback, invoke_llm
 from langchain_core.messages import SystemMessage, HumanMessage
 
 logger = logging.getLogger(__name__)
 
 SQL_GENERATOR_PROMPT = """You are the SQL Code Generator for MarketMind AI — Agentic B2B Marketplace Intelligence.
 Your job is to generate a single, highly optimized SELECT query to run against DuckDB.
+
+SEMANTIC CORRECTNESS (critical):
+- Execution success does not mean semantic success.
+- The SQL must answer every explicit analytical requirement in the SEMANTIC REQUIREMENTS contract.
+- Never collapse a dimension-level question into a global aggregate.
+- Never substitute profit for profit_margin when margin is explicitly requested.
+- Never answer a top/bottom intersection question with only one ranking.
+- Return enough rows and metrics to support the requested comparison and business conclusion.
+- SQL returns evidence only; do not write narrative business insights in SQL.
 
 CRITICAL RULES:
 1. ONLY write a SELECT statement. Do NOT write INSERT, UPDATE, DELETE, CREATE, or DROP statements.
@@ -22,6 +30,12 @@ CRITICAL RULES:
    - If a column is a VARCHAR resembling a date (e.g., '2/24/2003 0:00'), you MUST parse it using the `strptime()` function with the correct format string (e.g. `strptime(OrderDate, '%m/%d/%Y %H:%M')`) before applying date functions like `date_trunc()` or `strftime()`.
    - For marketplace `orders.order_date` (YYYY-MM-DD), you may use CAST(order_date AS DATE) or strptime as appropriate.
    - Never apply `date_trunc` or date aggregations directly on unparsed VARCHAR columns.
+6. REQUIRED DIMENSIONS: If the contract lists city/category/region/segment/product/channel, include that dimension in SELECT and GROUP BY when analysis is across/by that dimension.
+7. DERIVED METRICS: If profit_margin is required, compute SUM(profit)/NULLIF(SUM(sales_amount),0) AS profit_margin (use schema column names). Raw profit alone is not enough.
+8. RELATIONSHIPS: Across a dimension → aggregate per dimension with the relevant metrics. A single global CORR() is not enough.
+9. COMPARISONS: Prefer multiple relevant rows/rankings. Avoid LIMIT 1 unless comparison context is still present.
+10. RANKINGS / INTERSECTION: For top-N by sales AND bottom-N by profit margin, use separate DENSE_RANK()/RANK() expressions and return the INTERSECTION (sales_rank <= N AND margin_rank <= N).
+11. When asked for total sales, total profit, and profit margin per group, return ALL three for every group.
 
 Schema:
 {schema_context}
@@ -31,6 +45,8 @@ Original Question:
 
 Plan Steps:
 {plan_steps}
+
+{requirement_contract}
 """
 
 PYTHON_GENERATOR_PROMPT = """You are the Python Code Generator for the Autonomous Data Analyst Agent.
@@ -54,6 +70,7 @@ CRITICAL RULES:
    - Do NOT import unauthorized libraries (standard libraries like pandas, numpy, plotly, reportlab, json, and math are allowed).
 5. Output ONLY the raw Python code. Do not wrap it in markdown backticks or explanation text.
 6. Handle exceptions gracefully within your script and print clean outputs.
+7. SEMANTIC: Satisfy the SEMANTIC REQUIREMENTS contract (dimensions, metrics, derived metrics). Execution success ≠ semantic success.
 
 Schema:
 {schema_context}
@@ -63,26 +80,42 @@ Original Question:
 
 Plan Steps:
 {plan_steps}
+
+{requirement_contract}
 """
+
+
+def _strip_code_fences(code: str) -> str:
+    code = (code or "").strip()
+    if code.startswith("```"):
+        lines = code.split("\n")
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        code = "\n".join(lines).strip()
+    return code
+
 
 def code_generator_node(state: AgentState) -> Dict[str, Any]:
     """
     Generates SQL or Python code based on the plan and schema.
+    Injects a canonical semantic requirement contract and pre-checks SQL coverage.
     """
     import time
     node_name = "code_generator"
     start_time = time.time()
     retry_count = state.get("retry_count", 0)
-    
+
     logger.info(f"Node started: {node_name} (Retry count: {retry_count})")
-    
+
     question = get_effective_question(state)
     schema_profile = state.get("schema_profile")
     plan = state.get("plan") or {}
     dataset_id = state.get("dataset_id")
     table_name = state.get("duckdb_table") or dataset_id
     retry_history = state.get("retry_history", [])
-    
+
     approach = plan.get("approach", "sql")
     plan_steps = "\n".join([f"- {s}" for s in plan.get("steps", [])])
 
@@ -97,8 +130,31 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
         ANALYSIS_SOURCE_FALLBACK,
         ANALYSIS_SOURCE_LLM,
     )
+    from backend.services.requirement_coverage import (
+        check_requirement_coverage,
+        extract_question_requirements,
+        format_semantic_requirement_contract,
+        generation_precheck_feedback,
+        schema_column_names,
+    )
 
-    def _finish(code: str, *, source: str, failed: bool = False, failure: dict | None = None):
+    req = extract_question_requirements(question)
+    schema_cols = schema_column_names(schema_profile or {})
+    requirement_contract = format_semantic_requirement_contract(
+        req, schema_columns=schema_cols
+    )
+
+    def _finish(
+        code: str,
+        *,
+        source: str,
+        failed: bool = False,
+        failure: dict | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        precheck_ok: bool | None = None,
+        precheck_missing: Optional[List[str]] = None,
+    ):
         end_time = time.time()
         duration_ms = (end_time - start_time) * 1000
         node_metadata = {
@@ -114,13 +170,26 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
         execution_metadata.append(node_metadata)
         artifacts = dict(state.get("analysis_artifacts") or {})
         artifacts["analysis_source"] = source
-        out = {
+        artifacts["question_requirements"] = req.to_dict()
+        artifacts["requirement_contract"] = requirement_contract
+        if precheck_ok is not None:
+            artifacts["generation_precheck_ok"] = precheck_ok
+        if precheck_missing is not None:
+            artifacts["generation_precheck_missing"] = list(precheck_missing)
+        if provider:
+            artifacts["provider"] = provider
+        elif source == ANALYSIS_SOURCE_FALLBACK:
+            artifacts["provider"] = "Deterministic Fallback"
+        if model:
+            artifacts["model"] = model
+        elif source == ANALYSIS_SOURCE_FALLBACK:
+            artifacts["model"] = "schema-aware-sql"
+        return {
             "generated_code": code,
             "execution_metadata": execution_metadata,
             "analysis_artifacts": artifacts,
             "failure_summary": failure,
         }
-        return out
 
     schema_context = format_schema_context_for_llm(schema_profile or {}, fallback_table=table_name)
 
@@ -131,7 +200,13 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
             logger.warning(
                 "Analytics DEMO MODE — using deterministic SQL fallback (skipping LLM)."
             )
-            return _finish(fallback.sql, source=ANALYSIS_SOURCE_FALLBACK)
+            ok_fb, miss_fb = check_requirement_coverage(question, fallback.sql, columns=None)
+            return _finish(
+                fallback.sql,
+                source=ANALYSIS_SOURCE_FALLBACK,
+                precheck_ok=ok_fb,
+                precheck_missing=miss_fb,
+            )
         logger.warning(
             "Analytics DEMO MODE — no deterministic SQL for question (reason=%s).",
             fallback.reason,
@@ -151,21 +226,43 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
         )
 
     if approach == "sql":
-        system_prompt = SQL_GENERATOR_PROMPT.format(table_name=table_name, schema_context=schema_context, question=question, plan_steps=plan_steps)
+        system_prompt = SQL_GENERATOR_PROMPT.format(
+            table_name=table_name,
+            schema_context=schema_context,
+            question=question,
+            plan_steps=plan_steps,
+            requirement_contract=requirement_contract,
+        )
     else:
-        system_prompt = PYTHON_GENERATOR_PROMPT.format(dataset_id=dataset_id, schema_context=schema_context, question=question, plan_steps=plan_steps)
+        system_prompt = PYTHON_GENERATOR_PROMPT.format(
+            dataset_id=dataset_id,
+            schema_context=schema_context,
+            question=question,
+            plan_steps=plan_steps,
+            requirement_contract=requirement_contract,
+        )
 
     messages = [
         SystemMessage(content=system_prompt),
-        HumanMessage(content=f"Generate the code to answer: '{question}' using the plan above.")
+        HumanMessage(
+            content=(
+                f"Generate the code to answer: '{question}' using the plan above.\n\n"
+                "You MUST satisfy BOTH the original question AND the SEMANTIC REQUIREMENTS contract."
+            )
+        ),
     ]
 
     # Inject failure history if we are retrying code generation
     if retry_history:
-        # Get failures related to code execution (runtime, structural, visualization, timeout)
-        code_failures = [f for f in retry_history if f["failure_type"] in ["runtime", "structural", "visualization", "timeout"]]
+        code_failures = [
+            f for f in retry_history
+            if f["failure_type"] in [
+                "runtime", "structural", "visualization", "timeout", "semantic",
+                "semantic_incomplete",
+            ]
+        ]
         if code_failures:
-            logger.info("Injecting code execution failure history into Code Generator context.")
+            logger.info("Injecting code/semantic failure history into Code Generator context.")
             failures_context = "\n---\n".join([
                 f"Attempt {i+1} Failure Details:\n"
                 f"- Failure Type: {f['failure_type']}\n"
@@ -175,26 +272,113 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
                 for i, f in enumerate(code_failures)
             ])
             messages.append(HumanMessage(
-                content=f"ATTENTION: Previous code execution attempts failed. Here is the compressed history of failures:\n{failures_context}\n\nPlease analyze these failures and rewrite the code to fix the root cause. Do NOT repeat the same mistakes."
+                content=(
+                    "ATTENTION: Previous attempts failed (including semantic coverage). "
+                    "History:\n"
+                    f"{failures_context}\n\n"
+                    "Regenerate SQL so EVERY required metric/dimension/derived metric is present. "
+                    "Do NOT repeat the same incomplete query."
+                )
             ))
 
-    try:
-        llm = get_llm(temperature=0.0) # 0.0 temperature for deterministic code generation
-        response = llm.invoke(messages)
-        code = response.content.strip()
+    def _semantic_precheck(code: str):
+        # Pre-check inspects generated SQL only — do not pass schema columns
+        # (that would falsely mark metrics as covered merely because they exist in the dataset).
+        return check_requirement_coverage(question, code, columns=None)
 
-        # Clean markdown code blocks (e.g. ```sql or ```python)
-        if code.startswith("```"):
-            lines = code.split("\n")
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines[-1].startswith("```"):
-                lines = lines[:-1]
-            code = "\n".join(lines).strip()
+    try:
+        inv = invoke_llm(messages, temperature=0.0)
+        code = _strip_code_fences(inv.get("content") or "")
+        provider = inv.get("provider")
+        model = inv.get("model")
+        source = inv.get("analysis_source") or ANALYSIS_SOURCE_LLM
+
+        # Lightweight deterministic pre-check (SQL only; do not execute)
+        if approach == "sql" and code:
+            ok_cov, missing = _semantic_precheck(code)
+            if not ok_cov:
+                logger.warning(
+                    "SQL generation pre-check failed (semantic_incomplete). Missing=%s. Regenerating once.",
+                    missing,
+                )
+                feedback = generation_precheck_feedback(question, missing, req)
+                regen_messages = list(messages) + [
+                    HumanMessage(
+                        content=(
+                            f"{feedback}\n\n"
+                            f"Previous incomplete SQL:\n{code}\n\n"
+                            "Output ONLY corrected raw SQL."
+                        )
+                    )
+                ]
+                try:
+                    inv2 = invoke_llm(regen_messages, temperature=0.0)
+                    code2 = _strip_code_fences(inv2.get("content") or "")
+                    if code2:
+                        code = code2
+                        provider = inv2.get("provider") or provider
+                        model = inv2.get("model") or model
+                        source = inv2.get("analysis_source") or source
+                except Exception as regen_err:
+                    logger.warning("Pre-check regeneration call failed: %s", regen_err)
+
+                ok_cov, missing = _semantic_precheck(code)
+                if not ok_cov:
+                    feedback = generation_precheck_feedback(question, missing, req)
+                    logger.warning(
+                        "SQL still fails semantic pre-check after regenerate. Missing=%s",
+                        missing,
+                    )
+                    # Do not pass incomplete SQL downstream as success — use existing retry path
+                    return _finish(
+                        "",
+                        source=source,
+                        failed=True,
+                        failure={
+                            "failure_type": "semantic_incomplete",
+                            "error_message": feedback,
+                            "code_context": code,
+                            "expected_vs_actual": (
+                                "semantic_incomplete. "
+                                f"Missing requirements: {list(missing)}. "
+                                "Suggested Retry Target: code_generator. "
+                                "Suggested Retry Strategy: Satisfy the SEMANTIC REQUIREMENTS "
+                                "contract (dimensions, metrics, derived metrics, rankings)."
+                            ),
+                        },
+                        provider=provider,
+                        model=model,
+                        precheck_ok=False,
+                        precheck_missing=list(missing),
+                    )
+
+            logger.info(
+                "Generated SQL passed semantic pre-check via %s (%s).",
+                provider,
+                model,
+            )
+            return _finish(
+                code,
+                source=source,
+                provider=provider,
+                model=model,
+                precheck_ok=True,
+                precheck_missing=[],
+            )
 
         generated_code = code
-        logger.info(f"Generated {approach.upper()} code successfully.")
-        return _finish(generated_code, source=ANALYSIS_SOURCE_LLM)
+        logger.info(
+            "Generated %s code successfully via %s (%s).",
+            approach.upper(),
+            provider,
+            model,
+        )
+        return _finish(
+            generated_code,
+            source=source,
+            provider=provider,
+            model=model,
+        )
     except Exception as e:
         logger.error(f"Error in Code Generator Node: {e}")
         status = "failed"
@@ -210,7 +394,11 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
             or "resource_exhausted" in error_str
             or "rate limit" in error_str
         )
-        is_provider = is_rate_limited or is_provider_auth_or_config_error(error_msg)
+        is_provider = (
+            is_rate_limited
+            or is_provider_auth_or_config_error(error_msg)
+            or "all llm providers failed" in error_str
+        )
 
         # Provider/auth failure → deterministic fallback for any loaded dataset
         if is_provider and approach == "sql":
@@ -219,7 +407,15 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
                 logger.warning(
                     "LLM provider unavailable — using deterministic analytics fallback."
                 )
-                return _finish(fallback.sql, source=ANALYSIS_SOURCE_FALLBACK)
+                ok_fb, miss_fb = check_requirement_coverage(
+                    question, fallback.sql, columns=None
+                )
+                return _finish(
+                    fallback.sql,
+                    source=ANALYSIS_SOURCE_FALLBACK,
+                    precheck_ok=ok_fb,
+                    precheck_missing=miss_fb,
+                )
             return _finish(
                 "",
                 source=ANALYSIS_SOURCE_FALLBACK,
@@ -238,7 +434,7 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
             logger.error("Provider chain exhausted. Skipping agent retry loop.")
             return _finish(
                 generated_code,
-                source=ANALYSIS_SOURCE_LLM,
+                source=ANALYSIS_SOURCE_FALLBACK,
                 failed=True,
                 failure={
                     "failure_type": "provider_error",
@@ -252,7 +448,7 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
     end_time = time.time()
     duration_ms = (end_time - start_time) * 1000
     logger.info(f"Node completed: {node_name} in {duration_ms:.2f}ms | Status: {status}")
-    
+
     node_metadata = {
         "node_name": node_name,
         "start_time": start_time,
@@ -262,11 +458,16 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
         "retry_count": retry_count,
         "error_message": error_msg
     }
-    
+
     execution_metadata = list(state.get("execution_metadata") or [])
     execution_metadata.append(node_metadata)
-    
+
     return {
         "generated_code": generated_code,
-        "execution_metadata": execution_metadata
+        "execution_metadata": execution_metadata,
+        "analysis_artifacts": {
+            **(state.get("analysis_artifacts") or {}),
+            "question_requirements": req.to_dict(),
+            "requirement_contract": requirement_contract,
+        },
     }

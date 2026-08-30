@@ -1,7 +1,6 @@
 import logging
 from typing import Dict, Any
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.postgres import PostgresSaver
 
 # Import state schema
 from backend.agents.state import AgentState
@@ -120,6 +119,9 @@ def create_agent_graph(pool) -> Any:
         logger.warning("No Postgres pool provided — using in-memory LangGraph checkpointer.")
         checkpointer = MemorySaver()
     else:
+        # Lazy import so Vercel/demo builds without langgraph-checkpoint-postgres.
+        from langgraph.checkpoint.postgres import PostgresSaver
+
         logger.info("Setting up LangGraph PostgresSaver checkpointer...")
         checkpointer = PostgresSaver(pool, serde=serde)
         checkpointer.setup()

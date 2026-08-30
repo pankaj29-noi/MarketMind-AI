@@ -7,12 +7,12 @@ import json
 import duckdb
 from typing import Dict, Any, Tuple
 from backend.services.session_manager import session_manager
-from backend.config import SANDBOX_TIMEOUT_SECONDS
+from backend.config import SANDBOX_TIMEOUT_SECONDS, get_scratch_root
 
 logger = logging.getLogger(__name__)
 
-# Base scratch directory in workspace
-SCRATCH_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "scratch"))
+# Base scratch directory (Vercel → /tmp/marketmind/scratch)
+SCRATCH_DIR = str(get_scratch_root())
 
 def prepare_scratch_directory(session_id: str, dataset_id: str) -> str:
     """

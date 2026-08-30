@@ -111,7 +111,7 @@ class QueryInfo(BaseModel):
     execution_time_ms: float         = Field(0.0, description="Wall-clock time in milliseconds")
     execution_id:     Optional[int]  = Field(None, description="Postgres report row ID for PDF link")
     provider:         str            = Field("Groq",                    description="LLM provider name")
-    model:            str            = Field("llama-3.3-70b-versatile", description="Model identifier")
+    model:            str            = Field("openai/gpt-oss-120b", description="Model identifier")
     retry_count:      int            = Field(0,   description="Number of agent retries")
 
 
@@ -140,7 +140,7 @@ class DebugInfo(BaseModel):
     llm_reasoning:  Optional[str] = Field(None, description="LLM explanation of its approach")
     analysis_source: Optional[str] = Field(
         None,
-        description="llm | deterministic_fallback — how SQL/analysis was produced",
+        description="groq | gemini | deterministic_fallback | llm — how SQL/analysis was produced",
     )
 
 

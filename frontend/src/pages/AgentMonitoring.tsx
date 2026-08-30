@@ -1,13 +1,16 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
+  CheckCircle2,
   Clock,
   Loader2,
+  Radar,
   RefreshCw,
   Sparkles,
   ThumbsUp,
 } from 'lucide-react';
+import { useReducedMotion } from 'framer-motion';
 import {
   fetchObservabilityRuns,
   fetchObservabilitySummary,
@@ -15,54 +18,25 @@ import {
   type WorkflowRun,
 } from '@/services/observability';
 import { cn } from '@/lib/utils';
-
-function formatPct(rate: number): string {
-  return `${(rate * 100).toFixed(0)}%`;
-}
-
-function formatLatency(ms?: number | null): string {
-  if (ms == null) return '—';
-  if (ms < 1000) return `${Math.round(ms)} ms`;
-  return `${(ms / 1000).toFixed(1)} s`;
-}
-
-function formatTime(iso?: string | null): string {
-  if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleString([], {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return iso;
-  }
-}
-
-function statusClass(status: string): string {
-  switch (status) {
-    case 'complete':
-      return 'bg-success/15 text-success border-success/30';
-    case 'running':
-      return 'bg-primary/15 text-primary border-primary/30';
-    case 'needs_info':
-      return 'bg-amber-500/15 text-amber-600 border-amber-500/30';
-    case 'no_products':
-    case 'no_suppliers':
-      return 'bg-orange-500/15 text-orange-600 border-orange-500/30';
-    case 'failed':
-      return 'bg-destructive/15 text-destructive border-destructive/30';
-    default:
-      return 'bg-muted text-muted-foreground border-border';
-  }
-}
+import { IntelligenceSignal } from '@/components/analysis/IntelligenceSignal';
+import { ExecutionObservatory } from '@/components/monitoring/ExecutionObservatory';
+import { RunHistoryList } from '@/components/monitoring/RunHistoryList';
+import { SystemTracePanel } from '@/components/monitoring/SystemTracePanel';
+import {
+  buildObservatoryStages,
+  deriveMissionPhase,
+  formatLatency,
+  formatPct,
+  phaseDotClass,
+} from '@/components/monitoring/missionControl';
 
 export const AgentMonitoring: React.FC = () => {
   const [summary, setSummary] = useState<ObservabilitySummary | null>(null);
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const reduceMotion = useReducedMotion();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -74,6 +48,10 @@ export const AgentMonitoring: React.FC = () => {
       ]);
       setSummary(s);
       setRuns(r);
+      setSelectedId((prev) => {
+        if (prev && r.some((x) => x.run_id === prev)) return prev;
+        return r[0]?.run_id ?? null;
+      });
     } catch (err: any) {
       setError(err.message || 'Failed to load monitoring data');
     } finally {
@@ -85,78 +63,97 @@ export const AgentMonitoring: React.FC = () => {
     load();
   }, [load]);
 
+  const selected = useMemo(
+    () => runs.find((r) => r.run_id === selectedId) ?? runs[0] ?? null,
+    [runs, selectedId]
+  );
+
+  const latest = runs[0] ?? null;
+  const phase = deriveMissionPhase(summary, latest);
+  const stages = selected ? buildObservatoryStages(selected) : [];
+  const isLiveRunning = selected?.final_status === 'running';
+
   return (
-    <div className="flex h-full w-full flex-col bg-background text-foreground">
-      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-background/70 px-6 py-3 backdrop-blur-xl">
-        <div>
-          <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-            MarketMind AI
-          </div>
-          <h1 className="text-sm font-semibold sm:text-base flex items-center gap-2">
-            <Activity className="h-4 w-4 text-primary" />
-            Agent Monitoring
+    <div className="flex h-full w-full flex-col bg-transparent text-foreground">
+      {/* Mission control header */}
+      <header className="mm-system-bar sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border/80 px-4 py-3 sm:px-6">
+        <div className="min-w-0">
+          <div className="type-section-label text-primary">Agent monitoring</div>
+          <h1 className="mt-0.5 flex items-center gap-2 text-sm font-semibold tracking-tight sm:text-base">
+            <Radar className="h-4 w-4 text-primary" strokeWidth={1.75} />
+            Autonomous execution observatory
           </h1>
         </div>
-        <button
-          type="button"
-          onClick={load}
-          disabled={loading}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[11px] text-muted-foreground hover:bg-muted disabled:opacity-50"
-        >
-          <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
-          Refresh
-        </button>
-      </div>
+        <div className="flex shrink-0 items-center gap-3">
+          <span className="hidden items-center gap-2 type-mono text-[10px] tracking-[0.12em] text-muted-foreground sm:inline-flex">
+            <span className={cn('h-1.5 w-1.5 rounded-full', phaseDotClass(phase))} />
+            {phase}
+          </span>
+          <button
+            type="button"
+            onClick={load}
+            disabled={loading}
+            className="mm-micro-control inline-flex items-center gap-1.5 border border-border px-2.5 py-1.5 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40"
+          >
+            <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+            Refresh
+          </button>
+        </div>
+      </header>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-6xl space-y-6 px-6 py-8">
+        <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">
-              Observability
-            </div>
-            <h2 className="mt-1 text-2xl font-bold tracking-tight">Workflow health at a glance</h2>
+            <div className="type-section-label text-primary">Mission control</div>
+            <h2 className="mt-1 text-xl font-semibold tracking-tight sm:text-2xl">
+              Observe autonomous workflow executions
+            </h2>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Lightweight run tracking and feedback for Lead Intelligence — no external tracing stack required.
+              Recorded Lead Intelligence runs and aggregate health — refresh to update.
+              {phase === 'RUNNING'
+                ? ' At least one workflow is currently marked running.'
+                : ' Historical runs remain stable; live signal appears only for running status.'}
             </p>
           </div>
 
           {loading && !summary && (
-            <div className="flex flex-col items-center justify-center py-24 space-y-3">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="text-sm text-muted-foreground">Loading agent metrics…</p>
+            <div className="surface-command relative overflow-hidden px-4 py-16 text-center">
+              {!reduceMotion && <IntelligenceSignal mode="running" className="top-0" />}
+              <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary" />
+              <p className="mt-3 text-sm text-muted-foreground">Loading mission control…</p>
             </div>
           )}
 
           {error && (
-            <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm">
-              <AlertTriangle className="mt-0.5 h-4 w-4 text-destructive shrink-0" />
+            <div className="flex items-start gap-2 border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
               <div>
                 <div className="font-medium">Could not load monitoring data</div>
-                <div className="text-xs text-muted-foreground mt-0.5">{error}</div>
+                <div className="mt-0.5 text-xs text-muted-foreground">{error}</div>
               </div>
             </div>
           )}
 
           {summary && (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               {[
                 {
-                  label: 'Total Runs',
+                  label: 'Total runs',
                   value: summary.total_runs.toLocaleString(),
                   icon: Activity,
                 },
                 {
-                  label: 'Success Rate',
+                  label: 'Success rate',
                   value: formatPct(summary.success_rate),
                   icon: Sparkles,
                 },
                 {
-                  label: 'Average Latency',
+                  label: 'Average latency',
                   value: formatLatency(summary.average_latency_ms),
                   icon: Clock,
                 },
                 {
-                  label: 'Helpful Feedback',
+                  label: 'Helpful feedback',
                   value: formatPct(summary.helpful_feedback_rate),
                   icon: ThumbsUp,
                   sub: `${summary.helpful_feedback_count}/${summary.total_feedback} ratings`,
@@ -164,82 +161,104 @@ export const AgentMonitoring: React.FC = () => {
               ].map((card) => (
                 <div
                   key={card.label}
-                  className="rounded-xl border border-border bg-card/40 px-4 py-4"
+                  className="border border-border/70 bg-background/25 px-4 py-3.5"
                 >
-                  <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-                    <card.icon className="h-3 w-3" />
+                  <div className="flex items-center gap-1.5 type-meta text-[10px]">
+                    <card.icon className="h-3 w-3 text-primary" strokeWidth={1.75} />
                     {card.label}
                   </div>
-                  <div className="mt-2 text-2xl font-bold tracking-tight">{card.value}</div>
+                  <div className="type-metric mt-2 text-xl">{card.value}</div>
                   {card.sub && (
-                    <div className="mt-0.5 text-[11px] text-muted-foreground">{card.sub}</div>
+                    <div className="mt-0.5 type-meta text-[10px]">{card.sub}</div>
                   )}
                 </div>
               ))}
             </div>
           )}
 
-          <section className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Recent Workflow Runs
-            </h3>
-            <div className="overflow-hidden rounded-xl border border-border">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-secondary/50 text-[11px] uppercase tracking-wider text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">Run ID</th>
-                    <th className="px-3 py-2 font-medium">Workflow</th>
-                    <th className="px-3 py-2 font-medium">Status</th>
-                    <th className="px-3 py-2 font-medium">Latency</th>
-                    <th className="px-3 py-2 font-medium">Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {runs.length === 0 && !loading ? (
-                    <tr>
-                      <td colSpan={5} className="px-3 py-10 text-center text-sm text-muted-foreground">
-                        No workflow runs yet. Analyze a lead requirement to populate this table.
-                      </td>
-                    </tr>
-                  ) : (
-                    runs.map((run) => (
-                      <tr key={run.run_id} className="border-t border-border/60 align-top">
-                        <td className="px-3 py-2.5 font-mono text-[11px]">
-                          <div className="truncate max-w-[140px]" title={run.run_id}>
-                            {run.run_id.slice(0, 8)}…
-                          </div>
-                          {run.input_summary && (
-                            <div className="mt-0.5 text-[10px] text-muted-foreground line-clamp-1 max-w-[180px]">
-                              {run.input_summary}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5 text-xs">
-                          {run.workflow_name.replace(/_/g, ' ')}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <span
-                            className={cn(
-                              'inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium capitalize',
-                              statusClass(run.final_status)
-                            )}
-                          >
-                            {run.final_status.replace(/_/g, ' ')}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2.5 text-xs tabular-nums">
-                          {formatLatency(run.latency_ms)}
-                        </td>
-                        <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
-                          {formatTime(run.started_at || run.created_at)}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+          {/* Empty / standby */}
+          {!loading && !error && runs.length === 0 && (
+            <section className="mm-empty-ready relative overflow-hidden px-5 py-12 text-center">
+              {!reduceMotion && <IntelligenceSignal mode="once" className="top-0" />}
+              <div className="type-section-label text-primary">Mission control standby</div>
+              <h3 className="mt-2 text-lg font-semibold tracking-tight">
+                No workflow executions recorded yet
+              </h3>
+              <p className="mx-auto mt-2 max-w-lg text-sm text-muted-foreground leading-relaxed">
+                Run Lead Intelligence analysis to populate this observatory with workflow status,
+                latency, and match counts.
+              </p>
+              <div className="mt-4 type-mono text-[10px] text-muted-foreground/80">
+                › INPUT → WORKFLOW → EXECUTION → OUTPUT
+              </div>
+            </section>
+          )}
+
+          {selected && stages.length > 0 && (
+            <div className="mm-analysis-flow grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+              <div className="space-y-4">
+                <ExecutionObservatory
+                  stages={stages}
+                  isLiveRunning={isLiveRunning}
+                  runLabel={`${selected.run_id.slice(0, 8)}… · ${selected.final_status}`}
+                />
+
+                {/* Completion / failure moment from real status */}
+                {selected.final_status === 'complete' && (
+                  <div className="relative overflow-hidden border border-success/30 bg-success/10 px-4 py-3">
+                    {!reduceMotion && <IntelligenceSignal mode="complete" />}
+                    <div className="flex items-start gap-2">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+                      <div>
+                        <div className="type-section-label text-[10px] text-success">
+                          Run complete
+                        </div>
+                        <p className="mt-0.5 text-sm font-medium">
+                          All available execution stages for this run are resolved.
+                        </p>
+                        {selected.latency_ms != null && (
+                          <p className="mt-1 type-mono text-[10px] text-muted-foreground">
+                            Latency {formatLatency(selected.latency_ms)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {['failed', 'no_products', 'no_suppliers', 'needs_info'].includes(
+                  selected.final_status
+                ) && (
+                  <div className="border border-destructive/25 bg-destructive/10 px-4 py-3">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                      <div>
+                        <div className="type-section-label text-[10px] text-destructive">
+                          Failure state
+                        </div>
+                        <p className="mt-0.5 text-sm font-medium capitalize">
+                          {selected.final_status.replace(/_/g, ' ')}
+                        </p>
+                        {selected.error_message && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {selected.error_message}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <SystemTracePanel run={selected} />
+              </div>
+
+              <RunHistoryList
+                runs={runs}
+                selectedId={selected.run_id}
+                onSelect={(run) => setSelectedId(run.run_id)}
+              />
             </div>
-          </section>
+          )}
         </div>
       </div>
     </div>

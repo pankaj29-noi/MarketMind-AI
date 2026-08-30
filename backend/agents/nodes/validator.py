@@ -72,6 +72,7 @@ def validator_node(state: AgentState) -> Dict[str, Any]:
             if existing_failure and existing_failure.get("failure_type") in (
                 "provider_error",
                 "unsupported_question",
+                "semantic_incomplete",
             ):
                 failure_summary = existing_failure
                 logger.warning(
@@ -165,6 +166,54 @@ def validator_node(state: AgentState) -> Dict[str, Any]:
                 else:
                     validation_passed = True
 
+            # Semantic coverage gate for Python results (same requirements as SQL)
+            if validation_passed:
+                from backend.services.requirement_coverage import (
+                    check_requirement_coverage,
+                    coverage_failure_message,
+                    extract_question_requirements,
+                )
+                py_cols = []
+                py_rows = None
+                if isinstance(result_data, dict):
+                    py_cols = list(result_data.get("columns") or [])
+                    if not py_cols and isinstance(result_data.get("data"), dict):
+                        py_cols = list(result_data["data"].keys())
+                    rows = result_data.get("rows")
+                    if isinstance(rows, list):
+                        py_rows = len(rows)
+                reqs = extract_question_requirements(question)
+                ok_cov, missing = check_requirement_coverage(
+                    question, code or "", py_cols, row_count=py_rows
+                )
+                artifacts_update = dict(state.get("analysis_artifacts") or {})
+                artifacts_update["question_requirements"] = reqs.to_dict()
+                artifacts_update["coverage_ok"] = ok_cov
+                artifacts_update["coverage_missing"] = list(missing)
+                if not ok_cov:
+                    err = coverage_failure_message(
+                        missing, question=question, requirements=reqs
+                    )
+                    failure_summary = {
+                        "failure_type": "semantic_incomplete",
+                        "error_message": err,
+                        "code_context": code or "",
+                        "expected_vs_actual": (
+                            f"semantic_incomplete. Missing requirements: {missing}. "
+                            "Suggested Retry Target: planner. "
+                            "Suggested Retry Strategy: Prefer SQL with GROUP BY for the "
+                            "required dimension; include all required metrics "
+                            "(do not return only a global correlation)."
+                        ),
+                    }
+                    logger.warning(
+                        "Validator Classified: python semantic_incomplete. Missing=%s",
+                        missing,
+                    )
+                    status = "failed"
+                    validation_passed = False
+                    error_msg = err
+
     else:
         # 1. RUNTIME & TIMEOUT FAILURE CLASSIFICATION (SQL)
         if not execution_success:
@@ -172,6 +221,7 @@ def validator_node(state: AgentState) -> Dict[str, Any]:
             if existing_failure and existing_failure.get("failure_type") in (
                 "provider_error",
                 "unsupported_question",
+                "semantic_incomplete",
             ):
                 failure_summary = existing_failure
                 logger.warning(
@@ -241,45 +291,130 @@ Data Preview (Top Rows):
             ]
 
             try:
-                llm = get_llm(temperature=0.0)
-                response = llm.invoke(messages)
-                content = response.content.strip()
+                from backend.config import invoke_llm
+                from backend.services.requirement_coverage import (
+                    check_requirement_coverage,
+                    coverage_failure_message,
+                    extract_question_requirements,
+                )
 
-                if content.startswith("```json"):
-                    content = content[7:]
-                if content.endswith("```"):
-                    content = content[:-3]
-                content = content.strip()
+                # Hard gate: deterministic requirement coverage (always)
+                reqs = extract_question_requirements(question)
+                ok_cov, missing = check_requirement_coverage(
+                    question,
+                    code or "",
+                    output_summary.get("columns") or [],
+                    row_count=output_summary.get("row_count"),
+                )
+                artifacts_update = dict(state.get("analysis_artifacts") or {})
+                artifacts_update["question_requirements"] = reqs.to_dict()
+                artifacts_update["coverage_ok"] = ok_cov
+                artifacts_update["coverage_missing"] = list(missing)
 
-                eval_res = json.loads(content, strict=False)
-                
-                if eval_res.get("answers_question") is True:
-                    logger.info("Validator Node passed semantic check successfully.")
-                    validation_passed = True
-                else:
-                    reason = eval_res.get("reason", "Result does not semantically answer user's question.")
-                    suggested_target = eval_res.get("suggested_retry_target", "planner")
-                    failure_type = "semantic" if suggested_target == "planner" else "structural"
-                    
+                if not ok_cov:
+                    err = coverage_failure_message(
+                        missing, question=question, requirements=reqs
+                    )
                     failure_summary = {
-                        "failure_type": failure_type,
-                        "error_message": reason,
+                        "failure_type": "semantic_incomplete",
+                        "error_message": err,
                         "code_context": code or "",
                         "expected_vs_actual": (
-                            f"Confidence Score: {eval_res.get('confidence_score', 'Low')}\n"
-                            f"Checks performed: {eval_res.get('checks', {})}\n"
-                            f"Suggested Retry Target: {suggested_target}\n"
-                            f"Suggested Retry Strategy: {eval_res.get('suggested_retry_strategy')}"
-                        )
+                            f"semantic_incomplete. Missing requirements: {missing}. "
+                            "Suggested Retry Target: code_generator. "
+                            "Suggested Retry Strategy: Include all required metrics/"
+                            "dimensions and comparison logic from the question."
+                        ),
                     }
-                    logger.warning(f"Validator Classified: {failure_type} semantic failure. Reason: {reason}")
+                    logger.warning(
+                        "Validator Classified: semantic_incomplete. Missing=%s",
+                        missing,
+                    )
                     status = "failed"
-                    error_msg = reason
-                    
+                    error_msg = err
+                else:
+                    inv = invoke_llm(messages, temperature=0.0)
+                    content = (inv.get("content") or "").strip()
+
+                    if content.startswith("```json"):
+                        content = content[7:]
+                    if content.endswith("```"):
+                        content = content[:-3]
+                    content = content.strip()
+
+                    eval_res = json.loads(content, strict=False)
+
+                    if eval_res.get("answers_question") is True:
+                        logger.info("Validator Node passed semantic check successfully.")
+                        validation_passed = True
+                    else:
+                        reason = eval_res.get(
+                            "reason",
+                            "Result does not semantically answer user's question.",
+                        )
+                        suggested_target = eval_res.get(
+                            "suggested_retry_target", "planner"
+                        )
+                        failure_type = (
+                            "semantic" if suggested_target == "planner" else "structural"
+                        )
+
+                        failure_summary = {
+                            "failure_type": failure_type,
+                            "error_message": reason,
+                            "code_context": code or "",
+                            "expected_vs_actual": (
+                                f"Confidence Score: {eval_res.get('confidence_score', 'Low')}\n"
+                                f"Checks performed: {eval_res.get('checks', {})}\n"
+                                f"Suggested Retry Target: {suggested_target}\n"
+                                f"Suggested Retry Strategy: {eval_res.get('suggested_retry_strategy')}"
+                            ),
+                        }
+                        logger.warning(
+                            f"Validator Classified: {failure_type} semantic failure. Reason: {reason}"
+                        )
+                        status = "failed"
+                        error_msg = reason
+
             except Exception as e:
                 logger.error(f"Error in Validator Node semantic check: {e}")
-                # Fallback to pass so LLM api issues don't crash execution loop
-                validation_passed = True
+                from backend.services.requirement_coverage import (
+                    check_requirement_coverage,
+                    coverage_failure_message,
+                    extract_question_requirements,
+                )
+
+                reqs = extract_question_requirements(question)
+                ok_cov, missing = check_requirement_coverage(
+                    question,
+                    code or "",
+                    output_summary.get("columns") or [],
+                    row_count=output_summary.get("row_count"),
+                )
+                if ok_cov:
+                    logger.warning(
+                        "LLM semantic validator unavailable; deterministic coverage passed."
+                    )
+                    validation_passed = True
+                else:
+                    err = coverage_failure_message(
+                        missing, question=question, requirements=reqs
+                    )
+                    failure_summary = {
+                        "failure_type": "semantic_incomplete",
+                        "error_message": err,
+                        "code_context": code or "",
+                        "expected_vs_actual": (
+                            f"LLM validator unavailable ({e}). "
+                            f"semantic_incomplete: {missing}."
+                        ),
+                    }
+                    logger.warning(
+                        "Validator rejecting result after LLM failure + coverage miss: %s",
+                        missing,
+                    )
+                    status = "failed"
+                    error_msg = err
 
     # Calculate execution metrics
     end_time = time.time()
@@ -302,5 +437,10 @@ Data Preview (Top Rows):
     return {
         "validation_passed": validation_passed,
         "failure_summary": failure_summary,
-        "execution_metadata": execution_metadata
+        "execution_metadata": execution_metadata,
+        "analysis_artifacts": locals().get("artifacts_update")
+        or {
+            **(state.get("analysis_artifacts") or {}),
+            "coverage_ok": bool(validation_passed),
+        },
     }

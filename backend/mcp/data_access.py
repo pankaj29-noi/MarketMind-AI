@@ -36,7 +36,8 @@ def is_csv_session(session_id: str) -> bool:
 
             if dataset_name and dataset_name.lower().endswith(".csv") and dataset_id:
                 # Check persistent scratch file path
-                scratch_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "scratch", session_id))
+                from backend.config import get_scratch_root
+                scratch_dir = os.path.join(str(get_scratch_root()), session_id)
                 csv_path = os.path.join(scratch_dir, f"{dataset_id}.csv")
                 if os.path.exists(csv_path):
                     logger.info(f"Auto-restoring DuckDB session cache for dataset {dataset_id} in session {session_id} from {csv_path}")

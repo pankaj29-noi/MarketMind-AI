@@ -9,6 +9,11 @@ def map_error_to_resolution(failure_type: str) -> str:
     
     if failure_type in ["structural", "syntax", "parser", "parser error"]:
         return "Review SQL syntax and identifier formatting."
+    elif failure_type in ["semantic_incomplete"]:
+        return (
+            "Regenerate the analysis so every required dimension, metric, "
+            "derived metric, ranking, and comparison from the question is covered."
+        )
     elif failure_type in ["semantic", "binder", "binder error"]:
         return "Verify table and column names exist and exactly match the schema."
     elif failure_type in ["timeout"]:
@@ -33,6 +38,11 @@ def map_error_to_summary(failure_type: str) -> str:
     
     if failure_type in ["structural", "syntax", "parser", "parser error"]:
         return "The SQL query could not be executed because a syntax error was detected."
+    elif failure_type in ["semantic_incomplete"]:
+        return (
+            "The query ran, but the result does not fully answer the question "
+            "(missing required dimensions, metrics, rankings, or comparisons)."
+        )
     elif failure_type in ["semantic", "binder", "binder error"]:
         return "The query could not be executed because it referenced columns or tables that do not exist."
     elif failure_type in ["timeout"]:

@@ -6,8 +6,6 @@ import asyncio
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from langchain_mcp_adapters.client import MultiServerMCPClient
-
 logger = logging.getLogger(__name__)
 
 async def invoke_mcp_tool(tool_name: str, kwargs: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -15,6 +13,12 @@ async def invoke_mcp_tool(tool_name: str, kwargs: Dict[str, Any]) -> Optional[Di
     Initializes the MCP Client, discovers tools, and invokes the requested tool.
     Returns the parsed JSON result, or None if the tool fails.
     """
+    try:
+        from langchain_mcp_adapters.client import MultiServerMCPClient
+    except ImportError:
+        logger.warning("langchain-mcp-adapters not installed; skipping MCP tool invoke.")
+        return None
+
     server_path = Path(__file__).parent.parent / "mcp_server" / "server.py"
     
     config = {

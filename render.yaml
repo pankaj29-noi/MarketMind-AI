@@ -1,0 +1,34 @@
+# MarketMind AI — Render Blueprint
+# Dashboard: New → Blueprint → connect pankaj29-noi/MarketMind-AI
+# Or attach this as the web service config for marketmind-api
+
+services:
+  - type: web
+    name: marketmind-api
+    runtime: python
+    plan: free
+    region: oregon
+    rootDir: .
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: DEMO_MODE
+        value: auto
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
+      - key: GEMINI_FALLBACK_MODEL
+        value: gemini-2.0-flash
+      - key: SANDBOX_TIMEOUT_SECONDS
+        value: "10"
+      - key: SANDBOX_MEMORY_LIMIT_MB
+        value: "256"
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false

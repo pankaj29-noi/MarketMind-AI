@@ -1,0 +1,17 @@
+# Vercel deploy ignores — keep bundle lean
+.venv
+__pycache__
+*.pyc
+.git
+frontend
+docs
+screenshots
+uploads
+scratch
+.pytest_cache
+backend/**/__pycache__
+backend/tests
+backend/mcp_server
+*.md
+requirements-dev.txt
+requirements-vercel.txt

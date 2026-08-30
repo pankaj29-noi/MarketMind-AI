@@ -26,7 +26,9 @@ from backend.marketplace.sql_fallback import (
 logger = logging.getLogger(__name__)
 
 ANALYSIS_SOURCE_FALLBACK = "deterministic_fallback"
-ANALYSIS_SOURCE_LLM = "llm"
+ANALYSIS_SOURCE_LLM = "llm"  # legacy alias
+ANALYSIS_SOURCE_GROQ = "groq"
+ANALYSIS_SOURCE_GEMINI = "gemini"
 
 
 @dataclass
@@ -44,6 +46,7 @@ _METRIC_ALIASES: Dict[str, Tuple[str, ...]] = {
     "quantity": ("quantity", "qty", "units", "unit_count"),
     "orders": ("order_id", "orders", "order_count"),
     "rating": ("rating", "avg_rating", "score"),
+    "discount": ("discount_rate", "discount", "discount_pct", "discount_percent"),
 }
 
 _DIM_ALIASES: Dict[str, Tuple[str, ...]] = {
@@ -195,7 +198,7 @@ def _is_out_of_domain(q: str, roles: ColumnRoleMap) -> bool:
         re.search(
             r"\b(categor(y|ies)|products?|suppliers?|buyers?|leads?|orders?|sales|"
             r"revenue|profit|cit(y|ies)|regions?|states?|segments?|channels?|"
-            r"customers?|quantity|rating|gmv)\b",
+            r"customers?|quantity|rating|gmv|discount|margin)\b",
             q,
         )
     )
@@ -222,8 +225,217 @@ def _single_table_sql(question: str, roles: ColumnRoleMap) -> FallbackResult:
     if _is_out_of_domain(q, roles):
         return FallbackResult(None, "unsupported_domain", ANALYSIS_SOURCE_FALLBACK)
 
+    # Predictive / causal questions are outside deterministic descriptive fallback
+    if re.search(
+        r"\b(predict|forecast|will become|next year|next month|what caused)\b"
+        r"|\bcaus(?:e|ed|es)\b",
+        q,
+    ):
+        return FallbackResult(None, "unsupported_schema", ANALYSIS_SOURCE_FALLBACK)
+
     table = _ident(roles.table)
     lim = _limit(q)
+    sales_col = roles.metrics.get("sales")
+    profit_col = roles.metrics.get("profit")
+    discount_col = roles.metrics.get("discount")
+
+    # Build optional WHERE from explicit filter phrases (matches requirement extraction)
+    where_bits: List[str] = []
+    city_filter = re.search(
+        r"\bin\s+(delhi|mumbai|jaipur|pune|chennai|bangalore|bengaluru|hyderabad|kolkata)\b",
+        q,
+    )
+    if city_filter and "city" in roles.dimensions:
+        where_bits.append(
+            f"LOWER(CAST({_ident(roles.dimensions['city'])} AS VARCHAR)) = '{city_filter.group(1)}'"
+        )
+    segment_filter = re.search(
+        r"\bamong\s+(corporate|consumer|home\s+office|small\s+business)\b"
+        r"|\b(corporate|consumer|home\s+office)\s+customers?\b",
+        q,
+    )
+    if segment_filter and "segment" in roles.dimensions:
+        seg = (segment_filter.group(1) or segment_filter.group(2) or "").strip()
+        where_bits.append(
+            f"LOWER(CAST({_ident(roles.dimensions['segment'])} AS VARCHAR)) LIKE '%{seg}%'"
+        )
+    channel_filter = re.search(
+        r"\b(?:through|via|on|using)\s+(?:the\s+)?(online|retail|partner)\s+channel\b",
+        q,
+    )
+    if channel_filter and "channel" in roles.dimensions:
+        where_bits.append(
+            f"LOWER(CAST({_ident(roles.dimensions['channel'])} AS VARCHAR)) = '{channel_filter.group(1)}'"
+        )
+    where_sql = (" WHERE " + " AND ".join(where_bits)) if where_bits else ""
+
+    # Discount × profitability across categories (category-level, not global only)
+    if (
+        discount_col
+        and profit_col
+        and sales_col
+        and re.search(r"\bdiscount", q)
+        and re.search(r"\b(profit|margin|profitab)", q)
+        and re.search(r"\bcategor", q)
+        and "category" in roles.dimensions
+    ):
+        d = _ident(roles.dimensions["category"])
+        disc = _ident(discount_col)
+        s = _ident(sales_col)
+        p = _ident(profit_col)
+        sql = f"""
+SELECT {d} AS category,
+       ROUND(AVG({disc}), 4) AS avg_discount_rate,
+       ROUND(SUM({s}), 2) AS total_sales,
+       ROUND(SUM({p}), 2) AS total_profit,
+       ROUND(SUM({p}) / NULLIF(SUM({s}), 0), 4) AS profit_margin
+FROM {table}
+GROUP BY {d}
+ORDER BY avg_discount_rate DESC, profit_margin ASC
+LIMIT {lim}
+""".strip()
+        # Inject filter if present
+        if where_sql:
+            sql = sql.replace(f"FROM {table}\nGROUP BY", f"FROM {table}{where_sql}\nGROUP BY")
+        return FallbackResult(sql, "answerable", ANALYSIS_SOURCE_FALLBACK)
+
+    # Full per-dimension metrics (sales + profit + margin) without filtering
+    if (
+        sales_col
+        and profit_col
+        and re.search(r"\b(sales|revenue)\b", q)
+        and re.search(r"\bprofit", q)
+        and re.search(r"\b(each|for each|every|all segments|all categor|calculate total)\b", q)
+    ):
+        dim_role, dim_col = None, None
+        for role in ("segment", "category", "city", "region", "channel", "product"):
+            if role in roles.dimensions and (
+                re.search(rf"\b{role}", q)
+                or (role == "segment" and re.search(r"\bsegment", q))
+                or (role == "category" and re.search(r"\bcategor", q))
+                or (role == "city" and re.search(r"\bcit", q))
+                or (role == "region" and re.search(r"\bregion", q))
+            ):
+                dim_role, dim_col = role, roles.dimensions[role]
+                break
+        if dim_col:
+            d = _ident(dim_col)
+            s = _ident(sales_col)
+            p = _ident(profit_col)
+            sql = f"""
+SELECT {d} AS {dim_role},
+       ROUND(SUM({s}), 2) AS total_sales,
+       ROUND(SUM({p}), 2) AS total_profit,
+       ROUND(SUM({p}) / NULLIF(SUM({s}), 0), 4) AS profit_margin
+FROM {table}
+GROUP BY {d}
+ORDER BY total_sales DESC, profit_margin ASC
+LIMIT {lim}
+""".strip()
+            return FallbackResult(sql, "answerable", ANALYSIS_SOURCE_FALLBACK)
+
+    # Top N by sales ∩ bottom N by profit margin (before generic high/low contrast)
+    top_m = re.search(r"\btop\s+(\d+)\b", q)
+    bot_m = re.search(r"\bbottom\s+(\d+)\b", q)
+    if (
+        sales_col
+        and profit_col
+        and top_m
+        and bot_m
+        and re.search(r"\b(sales|revenue)\b", q)
+        and re.search(r"\b(profit|margin)\b", q)
+    ):
+        top_n = max(1, min(50, int(top_m.group(1))))
+        bot_n = max(1, min(50, int(bot_m.group(1))))
+        dim_role, dim_col = None, None
+        for role in ("category", "city", "product", "region", "segment"):
+            if role in roles.dimensions and (
+                re.search(rf"\b{role}", q)
+                or (role == "category" and re.search(r"\bcategor", q))
+            ):
+                dim_role, dim_col = role, roles.dimensions[role]
+                break
+        if dim_col is None and "category" in roles.dimensions:
+            dim_role, dim_col = "category", roles.dimensions["category"]
+        if dim_col:
+            d = _ident(dim_col)
+            s = _ident(sales_col)
+            p = _ident(profit_col)
+            sql = f"""
+WITH base AS (
+  SELECT {d} AS {dim_role},
+         ROUND(SUM({s}), 2) AS total_sales,
+         ROUND(SUM({p}), 2) AS total_profit,
+         ROUND(SUM({p}) / NULLIF(SUM({s}), 0), 4) AS profit_margin
+  FROM {table}{where_sql}
+  GROUP BY {d}
+),
+ranked AS (
+  SELECT *,
+         RANK() OVER (ORDER BY total_sales DESC) AS sales_rank,
+         RANK() OVER (ORDER BY profit_margin ASC) AS margin_rank
+  FROM base
+)
+SELECT {dim_role}, total_sales, total_profit, profit_margin, sales_rank, margin_rank
+FROM ranked
+WHERE sales_rank <= {top_n}
+  AND margin_rank <= {bot_n}
+ORDER BY sales_rank, margin_rank
+""".strip()
+            return FallbackResult(sql, "answerable", ANALYSIS_SOURCE_FALLBACK)
+
+    # High sales / low profit contrast (must include BOTH metrics + margin)
+    if (
+        sales_col
+        and profit_col
+        and re.search(r"\b(sales|revenue)\b", q)
+        and re.search(r"\bprofit", q)
+        and re.search(r"\b(high|low|relative|compar|but|versus|vs|margin|strong|weak)\b", q)
+    ):
+        dim_role, dim_col = None, None
+        for role in ("city", "category", "region", "segment", "channel", "product"):
+            if role in roles.dimensions and (
+                re.search(rf"\b{role}", q)
+                or (role == "city" and re.search(r"\bcit", q))
+                or (role == "category" and re.search(r"\bcategor", q))
+                or (role == "segment" and re.search(r"\bsegment", q))
+                or (role == "region" and re.search(r"\bregion", q))
+            ):
+                dim_role, dim_col = role, roles.dimensions[role]
+                break
+        if dim_col is None:
+            for role in ("city", "category", "region", "segment", "product"):
+                if role in roles.dimensions:
+                    dim_role, dim_col = role, roles.dimensions[role]
+                    break
+        if dim_col:
+            d = _ident(dim_col)
+            s = _ident(sales_col)
+            p = _ident(profit_col)
+            sql = f"""
+WITH city_metrics AS (
+  SELECT {d} AS {dim_role},
+         ROUND(SUM({s}), 2) AS total_sales,
+         ROUND(SUM({p}), 2) AS total_profit,
+         ROUND(SUM({p}) / NULLIF(SUM({s}), 0), 4) AS profit_margin
+  FROM {table}{where_sql}
+  GROUP BY {d}
+),
+stats AS (
+  SELECT
+    AVG(total_sales) AS avg_sales,
+    AVG(profit_margin) AS avg_margin
+  FROM city_metrics
+)
+SELECT c.{dim_role}, c.total_sales, c.total_profit, c.profit_margin
+FROM city_metrics c, stats s
+WHERE c.total_sales >= s.avg_sales
+  AND c.profit_margin <= s.avg_margin
+ORDER BY c.total_sales DESC, c.profit_margin ASC
+LIMIT {lim}
+""".strip()
+            return FallbackResult(sql, "answerable", ANALYSIS_SOURCE_FALLBACK)
+
     metric = _pick_metric(q, roles)
     dim = _pick_dimension(q, roles)
     agg = _agg_fn(q, metric[0] if metric else None)
@@ -240,31 +452,77 @@ def _single_table_sql(question: str, roles: ColumnRoleMap) -> FallbackResult:
             sql = f"SELECT COUNT(*) AS row_count FROM {table}"
         return FallbackResult(sql, "answerable", ANALYSIS_SOURCE_FALLBACK)
 
-    # Monthly / yearly trends
-    if roles.date_col and re.search(r"\b(monthly|yearly|daily|trend)\b", q):
+    # Monthly / quarterly / over-time (must run before generic top-N product fallback)
+    if roles.date_col and re.search(
+        r"\b(month|monthly|quarter|quarterly|over time|trend|daily|yearly)\b", q
+    ):
         date_col = _ident(roles.date_col)
-        if metric:
+        if re.search(r"\bquarter", q):
+            trunc = "%Y-Q"  # DuckDB strftime may need alternative; use date_trunc
+            period_expr = f"CAST(date_trunc('quarter', CAST({date_col} AS DATE)) AS DATE)"
+        elif re.search(r"\bdaily|day\b", q):
+            period_expr = f"strftime(CAST({date_col} AS DATE), '%Y-%m-%d')"
+        elif re.search(r"\byearly|year\b", q) and not re.search(r"\bmonth", q):
+            period_expr = f"strftime(CAST({date_col} AS DATE), '%Y')"
+        else:
+            period_expr = f"strftime(CAST({date_col} AS DATE), '%Y-%m')"
+
+        if re.search(r"\bprofit\s*margin|profitability|margin\b", q) and sales_col and profit_col:
+            s = _ident(sales_col)
+            p = _ident(profit_col)
+            metric_expr = f"ROUND(SUM({p}) / NULLIF(SUM({s}), 0), 4)"
+            alias = "profit_margin"
+        elif metric:
             mcol = _ident(metric[1])
             metric_expr = f"ROUND(SUM({mcol}), 2)" if agg != "COUNT" else f"COUNT({mcol})"
-            alias = "metric_value"
+            alias = "total_sales" if metric[0] == "sales" else "metric_value"
         else:
             metric_expr = "COUNT(*)"
             alias = "row_count"
-        trunc = "%Y-%m" if "yearly" not in q else "%Y"
-        if "daily" in q:
-            trunc = "%Y-%m-%d"
+
+        if re.search(r"\b(highest|lowest|largest|decline|drop)\b", q):
+            order = f"ORDER BY {alias} DESC"
+            if re.search(r"\b(lowest|decline|drop)\b", q) and not re.search(r"\bhighest\b", q):
+                # For decline questions still return chronologically ordered periods with metric
+                order = "ORDER BY period"
+        else:
+            order = "ORDER BY period"
+
         sql = f"""
-SELECT strftime(CAST({date_col} AS DATE), '{trunc}') AS period,
+SELECT {period_expr} AS period,
        {metric_expr} AS {alias}
-FROM {table}
+FROM {table}{where_sql}
 GROUP BY period
-ORDER BY period
+{order}
+LIMIT {lim}
 """.strip()
         return FallbackResult(sql, "answerable", ANALYSIS_SOURCE_FALLBACK)
 
     # Grouped ranking / aggregation
     if dim:
         dcol = _ident(dim[1])
+        # Prefer profit_margin when explicitly requested
+        if (
+            re.search(r"\bprofit\s*margin|profitability\b", q)
+            and sales_col
+            and profit_col
+            and dim[0] in ("product", "category", "segment", "city", "region", "channel")
+        ):
+            s = _ident(sales_col)
+            p = _ident(profit_col)
+            order = "ASC" if re.search(r"\b(lowest|least|minimum|min|worst)\b", q) else "DESC"
+            sql = f"""
+SELECT {dcol} AS {dim[0]},
+       ROUND(SUM({s}), 2) AS total_sales,
+       ROUND(SUM({p}), 2) AS total_profit,
+       ROUND(SUM({p}) / NULLIF(SUM({s}), 0), 4) AS profit_margin
+FROM {table}{where_sql}
+GROUP BY {dcol}
+ORDER BY profit_margin {order}
+LIMIT {lim}
+""".strip()
+            return FallbackResult(sql, "answerable", ANALYSIS_SOURCE_FALLBACK)
+
         if metric:
             mcol = _ident(metric[1])
             if agg == "COUNT":
@@ -280,7 +538,7 @@ ORDER BY period
         sql = f"""
 SELECT {dcol} AS {dim[0]},
        {expr} AS {alias}
-FROM {table}
+FROM {table}{where_sql}
 GROUP BY {dcol}
 ORDER BY {alias} {order}
 LIMIT {lim}

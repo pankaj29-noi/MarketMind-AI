@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Workspace } from './pages/Workspace';
 import { toast } from './lib/toast';
 import { API_BASE } from './lib/api';
+import { IntelligenceBackground } from './components/layout/IntelligenceBackground';
 
 import type {
   UploadResponse,
@@ -291,7 +292,9 @@ export const App: React.FC = () => {
   const latestRowCount = latestReport?.tables?.[0]?.rows?.length;
 
   return (
-    <div className="flex h-screen w-screen bg-background text-foreground overflow-hidden">
+    <div className="intelligence-shell app-frame relative">
+      <IntelligenceBackground />
+
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
@@ -307,6 +310,7 @@ export const App: React.FC = () => {
         }}
       />
 
+      <div className="app-main relative z-[var(--z-raised)] min-h-0 min-w-0">
       <Workspace
         session={session}
         hasDataset={!!session}
@@ -344,6 +348,7 @@ export const App: React.FC = () => {
         isDark={isDark}
         onThemeToggle={() => setIsDark(d => !d)}
       />
+      </div>
     </div>
   );
 };

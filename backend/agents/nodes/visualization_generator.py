@@ -122,9 +122,9 @@ Return ONLY the JSON VisualizationSpec.
                     content=f"ATTENTION: Previous visualization execution failed. Here is the failure history:\n{failures_context}\n\nPlease adapt your JSON parameters to correct this error."
                 ))
                 
-            llm = get_llm(temperature=0.0)
-            response = llm.invoke(messages)
-            output = response.content.strip()
+            from backend.config import invoke_llm
+            inv = invoke_llm(messages, temperature=0.0)
+            output = (inv.get("content") or "").strip()
 
             if output.startswith("```"):
                 lines = output.split("\n")

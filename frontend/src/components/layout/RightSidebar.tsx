@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { Activity, CheckCircle2, ChevronRight, ChevronUp, Clock, Cpu, Loader2, Sparkles, TrendingUp, XCircle, Zap, Table, BarChart2, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { resolvePipelineSteps } from "@/lib/pipelineSteps";
 
 interface TraceStep {
   step: string;
@@ -22,24 +23,6 @@ interface RightSidebarProps {
   latestReport?: any;
 }
 
-const friendlyLabels: Record<string, string> = {
-  schema_profiler: "Understanding dataset",
-  planner: "Planning analysis",
-  sql_generator: "Generating",
-  sandbox_executor: "Executing query",
-  validator: "Validating results",
-  report_agent: "Generating report"
-};
-
-const defaultSteps = [
-  "Understanding dataset",
-  "Planning analysis",
-  "Generating",
-  "Executing query",
-  "Validating results",
-  "Generating report",
-];
-
 export function RightSidebar({
   trace,
   activeExecutionTime,
@@ -59,7 +42,6 @@ export function RightSidebar({
   const hasTrace = trace && trace.length > 0;
   const pipelineStatus = isAnalyzing ? "Running" : activeStatus === false ? "Failed" : hasTrace ? "Completed" : "Idle";
 
-  // Scroll handler for scroll-to-top button
   const handleScroll = () => {
     if (scrollRef.current) {
       setShowScrollTop(scrollRef.current.scrollTop > 200);
@@ -69,61 +51,11 @@ export function RightSidebar({
   const scrollToTop = () => {
     scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   };
-  // Determine sequential stage progress and status
-  let nextRunningIdx = -1;
-  let lastExecutedIdx = -1;
-  
-  if (hasTrace) {
-    const lastNodeName = trace[trace.length - 1].step;
-    lastExecutedIdx = defaultSteps.findIndex(
-      (l) => l === (friendlyLabels[lastNodeName] || lastNodeName)
-    );
-    if (isAnalyzing) {
-      nextRunningIdx = Math.min(defaultSteps.length - 1, lastExecutedIdx + 1);
-    }
-  } else if (isAnalyzing) {
-    nextRunningIdx = 0;
-  }
 
-  const resolvedSteps = defaultSteps.map((label, idx) => {
-    let status: "pending" | "running" | "success" | "failed" = "pending";
-    let duration_ms: number | undefined = undefined;
-    let details: string | undefined = undefined;
-
-    // Retrieve corresponding duration/details from trace if it exists
-    const traceStep = trace?.find(
-      (t) => (friendlyLabels[t.step] || t.step) === label
-    );
-    if (traceStep) {
-      duration_ms = traceStep.duration_ms;
-      details = traceStep.details;
-    }
-
-    if (activeStatus === true) {
-      status = "success";
-    } else {
-      if (nextRunningIdx !== -1) {
-        if (idx < nextRunningIdx) status = "success";
-        else if (idx === nextRunningIdx) status = "running";
-        else status = "pending";
-      } else {
-        // Run is complete (isAnalyzing is false)
-        if (idx < lastExecutedIdx) {
-          status = "success";
-        } else if (idx === lastExecutedIdx) {
-          status = activeStatus === false ? "failed" : "success";
-        } else {
-          status = "pending";
-        }
-      }
-    }
-
-    return {
-      step: label,
-      status,
-      duration_ms,
-      details
-    };
+  const resolvedSteps = resolvePipelineSteps({
+    trace,
+    isAnalyzing,
+    activeStatus,
   });
 
   const rowsReturned = latestReport?.tables?.[0]?.rows?.length;
@@ -161,17 +93,17 @@ export function RightSidebar({
           style={{ width: "20rem" }}
         >
           
-          {/* 1. Compact Pipeline card (reduced padding & spacing by ~30%) */}
-          <div className="glass-card shrink-0 rounded-2xl p-3 sm:p-3.5">
+          {/* 1. Pipeline — secondary system view */}
+          <div className="surface-subtle shrink-0 p-3 sm:p-3.5">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-semibold">
+              <div className="flex items-center gap-2 type-section-label text-foreground">
                 <Activity className="h-3.5 w-3.5 text-primary" /> Pipeline
               </div>
               <span className={cn(
-                "rounded-full px-2 py-0.5 text-[10px] font-medium transition-all duration-300",
-                pipelineStatus === "Completed" ? "bg-emerald-500/15 text-emerald-500" :
-                pipelineStatus === "Running"   ? "bg-purple-500/15 text-purple-500" :
-                pipelineStatus === "Failed"    ? "bg-rose-500/15 text-rose-500" :
+                "px-2 py-0.5 type-mono text-[10px]",
+                pipelineStatus === "Completed" ? "bg-success/15 text-success" :
+                pipelineStatus === "Running"   ? "bg-primary/15 text-primary" :
+                pipelineStatus === "Failed"    ? "bg-destructive/15 text-destructive" :
                 "bg-secondary text-muted-foreground"
               )}>
                 {pipelineStatus}
@@ -189,38 +121,37 @@ export function RightSidebar({
                   <li key={i}>
                     <button
                       className={cn(
-                        "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-left border transition-all duration-300",
+                        "flex w-full items-center gap-2.5 px-2.5 py-1.5 text-left border transition-all duration-300",
                         isRunning
-                          ? "bg-purple-500/[0.04] dark:bg-purple-500/[0.08] border-purple-500/30 dark:border-purple-500/40 shadow-[0_0_12px_rgba(168,85,247,0.12)] font-medium"
+                          ? "bg-primary/[0.06] border-primary/30 font-medium"
                           : isPending
                           ? "border-transparent opacity-45"
                           : "border-transparent hover:bg-sidebar-accent/30"
                       )}
                       onClick={() => hasTrace && s.details ? setOpenStep(openStep === i ? null : i) : undefined}
                     >
-                      {/* Step indicator */}
                       <div className={cn(
                         "grid h-6 w-6 shrink-0 place-items-center rounded-full border transition-all duration-300",
-                        isDone    ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" :
-                        isFailed  ? "bg-rose-500/10 text-rose-500 border-rose-500/20" :
-                        isRunning ? "bg-purple-500/10 text-purple-500 border-purple-500/20 ring-2 ring-purple-500/20" :
-                        "bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 border-zinc-200 dark:border-zinc-700"
+                        isDone    ? "bg-success/10 text-success border-success/20" :
+                        isFailed  ? "bg-destructive/10 text-destructive border-destructive/20" :
+                        isRunning ? "bg-primary/10 text-primary border-primary/20 ring-1 ring-primary/20" :
+                        "bg-secondary text-muted-foreground border-border"
                       )}>
                         {isRunning ? (
-                          <Loader2 className="h-3 w-3 animate-spin text-purple-500" />
+                          <Loader2 className="h-3 w-3 animate-spin text-primary" />
                         ) : isDone ? (
-                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                          <CheckCircle2 className="h-3.5 w-3.5 text-success" />
                         ) : isFailed ? (
-                          <XCircle className="h-3.5 w-3.5 text-rose-500" />
+                          <XCircle className="h-3.5 w-3.5 text-destructive" />
                         ) : (
-                          <div className="h-2 w-2 rounded-full bg-zinc-300 dark:bg-zinc-600" />
+                          <div className="h-2 w-2 rounded-full bg-muted-foreground/40" />
                         )}
                       </div>
 
                       <div className="min-w-0 flex-1">
                         <div className={cn(
                           "text-xs transition-colors duration-300",
-                          isRunning ? "text-purple-500 font-semibold" :
+                          isRunning ? "text-primary font-semibold" :
                           isDone ? "text-foreground font-medium" :
                           "text-muted-foreground"
                         )}>{s.step}</div>
@@ -228,23 +159,21 @@ export function RightSidebar({
                           <div className="text-[10px] text-muted-foreground font-mono mt-0.5">{s.duration_ms} ms</div>
                         )}
                         {isRunning && (
-                          <div className="text-[10px] text-purple-500/80 animate-pulse mt-0.5 font-medium">Processing...</div>
+                          <div className="text-[10px] text-primary/80 mt-0.5 font-medium">Processing…</div>
                         )}
                       </div>
 
-                      {/* Connector dot */}
                       <div className={cn(
                         "h-1.5 w-1.5 shrink-0 rounded-full transition-all duration-300",
-                        isDone   ? "bg-emerald-500" :
-                        isFailed ? "bg-rose-500" :
-                        isRunning ? "bg-purple-500 animate-pulse" :
-                        "bg-zinc-200 dark:bg-zinc-700"
+                        isDone   ? "bg-success" :
+                        isFailed ? "bg-destructive" :
+                        isRunning ? "bg-primary animate-pulse" :
+                        "bg-border"
                       )} />
                     </button>
 
-                    {/* Expandable details */}
                     {openStep === i && s.details && (
-                      <div className="ml-9 mt-1 rounded-lg bg-secondary/40 px-3 py-2 text-[11px] text-muted-foreground animate-fade-in">
+                      <div className="ml-9 mt-1 bg-secondary/40 px-3 py-2 text-[11px] text-muted-foreground animate-fade-in">
                         {s.details}
                       </div>
                     )}
@@ -254,10 +183,10 @@ export function RightSidebar({
             </ol>
           </div>
 
-          {/* 2. Run statistics */}
-          <div className="glass-card shrink-0 rounded-2xl p-4">
-            <div className="flex items-center gap-2 text-xs font-semibold">
-              <Cpu className="h-3.5 w-3.5 text-primary" /> Run Statistics
+          {/* 2. Run statistics — secondary */}
+          <div className="surface-subtle shrink-0 p-4">
+            <div className="flex items-center gap-2 type-section-label text-foreground">
+              <Cpu className="h-3.5 w-3.5 text-primary" /> Run statistics
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
               <Stat icon={Clock} label="Latency" value={activeExecutionTime ? `${(activeExecutionTime / 1000).toFixed(2)}s` : "--"} />

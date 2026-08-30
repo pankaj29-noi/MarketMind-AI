@@ -169,8 +169,9 @@ export function ResultsTableCard({ payload, onDownloadTriggered }: { payload: Ap
 
   return (
     <ReportCard
-      eyebrow="Results"
+      eyebrow="Query results"
       title={table.title}
+      className="!rounded-none border-border/70 shadow-none hover:shadow-none"
       action={
         <div className="flex items-center gap-2">
           <div className="relative hidden sm:block">
@@ -182,12 +183,12 @@ export function ResultsTableCard({ payload, onDownloadTriggered }: { payload: Ap
                 setPage(0);
               }}
               placeholder="Filter rows…"
-              className="w-40 rounded-lg border border-border bg-background/40 py-1.5 pl-8 pr-2.5 text-xs focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/25"
+              className="w-40 border border-border bg-background/40 py-1.5 pl-8 pr-2.5 text-xs focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/25"
             />
           </div>
           <button
             onClick={handleCSVExport}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background/40 px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+            className="inline-flex items-center gap-1.5 border border-border bg-background/40 px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
             title="Download as CSV"
           >
             <Download className="h-3.5 w-3.5" /> CSV
@@ -195,9 +196,9 @@ export function ResultsTableCard({ payload, onDownloadTriggered }: { payload: Ap
         </div>
       }
     >
-      <div className="scrollbar-thin overflow-x-auto rounded-xl border border-border max-h-[400px]">
-        <table className="w-full min-w-full text-left text-sm border-collapse table-fixed">
-          <thead className="sticky top-0 bg-secondary/95 backdrop-blur z-10 shadow-sm">
+      <div className="scrollbar-thin overflow-x-auto border border-border max-h-[400px]">
+        <table className="w-full min-w-[640px] text-left text-sm border-collapse">
+          <thead className="sticky top-0 z-10 border-b border-border bg-secondary/95 backdrop-blur">
             <tr>
               {table.columns.map((c, colIdx) => {
                 const align = colAlignments[colIdx];
@@ -207,7 +208,7 @@ export function ResultsTableCard({ payload, onDownloadTriggered }: { payload: Ap
                     key={colIdx}
                     onClick={() => handleSort(colIdx)}
                     className={cn(
-                      "cursor-pointer select-none px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors min-w-[120px]",
+                      "cursor-pointer select-none px-3 py-2.5 type-section-label text-[10px] text-muted-foreground hover:text-foreground transition-colors min-w-[110px]",
                       alignClass
                     )}
                   >
@@ -216,7 +217,7 @@ export function ResultsTableCard({ payload, onDownloadTriggered }: { payload: Ap
                       align === "right" ? "justify-end" : align === "center" ? "justify-center" : "justify-start"
                     )}>
                       {align === "right" && <SortIcon colIdx={colIdx} />}
-                      <span className="truncate">{c}</span>
+                      <span className="truncate font-mono normal-case tracking-normal">{c}</span>
                       {align !== "right" && <SortIcon colIdx={colIdx} />}
                     </div>
                   </th>
@@ -229,7 +230,7 @@ export function ResultsTableCard({ payload, onDownloadTriggered }: { payload: Ap
               <tr>
                 <td
                   colSpan={table.columns.length}
-                  className="px-4 py-8 text-center text-sm text-muted-foreground"
+                  className="px-4 py-10 text-center text-sm text-muted-foreground"
                 >
                   No rows match your filter.
                 </td>
@@ -238,17 +239,22 @@ export function ResultsTableCard({ payload, onDownloadTriggered }: { payload: Ap
               pageRows.map((row, i) => (
                 <tr
                   key={i}
-                  className="border-t border-border transition-colors hover:bg-secondary/40"
+                  className="border-t border-border/50 transition-colors mm-micro-row hover:bg-primary/[0.04]"
                 >
                   {table.columns.map((c, colIdx) => {
                     const { formatted } = formatValue(row[colIdx], c, table.title);
                     const align = colAlignments[colIdx];
-                    const alignClass = align === "right" ? "text-right font-mono" : align === "center" ? "text-center" : "text-left";
+                    const alignClass =
+                      align === "right"
+                        ? "text-right font-mono tabular-nums"
+                        : align === "center"
+                          ? "text-center font-mono"
+                          : "text-left";
                     return (
-                      <td 
-                        key={colIdx} 
+                      <td
+                        key={colIdx}
                         className={cn(
-                          "px-4 py-1.5 text-[13px] text-foreground/90 border-t border-border/60",
+                          "px-3 py-2 text-[12.5px] text-foreground/90",
                           alignClass
                         )}
                       >

@@ -279,7 +279,15 @@ OUTPUT RULES:
 5. {insight_req}
 6. Do NOT invent recommendations. Leave the recommendations array empty (the system handles them).
 7. Do NOT include SQL, table data, or chart specifications.
-8. GROUNDING & EVIDENCE: Every statement in the narrative and insights must be strictly grounded in and traceable to the provided computed facts. Do not repeatedly inject confidence or evidence levels (e.g., "Moderate evidence", "Strong evidence") into the narrative text unless there is a specific statistical confidence or evidence level explicitly computed and provided in the facts. Do not confuse statistical magnitude (e.g. correlation r value, percentage share) with system evidence level.
+8. GROUNDING (critical):
+   - The executed analysis result is authoritative.
+   - Do not claim missing data if returned columns contain the requested evidence.
+   - Do not invent metrics, rankings, relationships, percentages, or conclusions.
+   - Distinguish association from causation (prefer "associated with").
+   - Distinguish lowest rank from a meaningful practical difference (check value spread).
+   - Do not require statistical significance / ANOVA unless the user asked for it.
+   - Business insights must show evidence first, then a cautious interpretation.
+   - Confidence must reflect semantic coverage and evidence quality — not execution success alone.
 9. INSIGHT QUALITY RULES:
    - Key Insights must add value beyond repeating the Executive Summary.
    - Start from an actual computed fact.
@@ -375,9 +383,10 @@ def _call_llm_for_report(
             )
         ))
 
-    llm = get_llm(temperature=0.3)
-    response = llm.invoke(messages)
-    raw = _clean_json(response.content)
+    from backend.config import invoke_llm
+
+    inv = invoke_llm(messages, temperature=0.3)
+    raw = _clean_json(inv.get("content") or "")
     data = json.loads(raw, strict=False)
     return LLMReportOutput.model_validate(data)
 
@@ -388,13 +397,45 @@ def _build_user_prompt(
     facts: dict,
     plan_steps: str | None,
     result_family: str,
+    schema_columns: list | None = None,
+    *,
+    result_columns: list | None = None,
+    result_preview: list | None = None,
+    requirement_contract: str | None = None,
+    coverage_ok: bool | None = None,
+    coverage_missing: list | None = None,
+    analysis_source: str | None = None,
 ) -> str:
+    result_cols = ", ".join(map(str, result_columns or [])) or "(none)"
+    schema_cols = ", ".join(schema_columns or []) or "(see schema in facts)"
+    preview = json.dumps(result_preview or [], indent=2, default=str)
+    cov = (
+        "PASS"
+        if coverage_ok is True
+        else ("FAIL" if coverage_ok is False else "unknown")
+    )
+    missing = ", ".join(coverage_missing or []) or "(none)"
+    contract = requirement_contract or "(not provided)"
     return (
         f"User Question: {question}\n\n"
         f"Classified Result Family: {result_family}\n\n"
+        f"Analysis source: {analysis_source or 'unknown'}\n"
+        f"Semantic coverage: {cov}\n"
+        f"Coverage gaps: {missing}\n\n"
+        f"SEMANTIC REQUIREMENTS (authoritative intent):\n{contract}\n\n"
+        f"EXECUTED RESULT COLUMNS (primary evidence — do NOT claim these are missing):\n"
+        f"{result_cols}\n\n"
+        f"EXECUTED RESULT PREVIEW (authoritative):\n{preview}\n\n"
+        f"Dataset schema columns (context only):\n{schema_cols}\n\n"
         f"Execution Plan:\n{plan_steps or 'N/A'}\n\n"
         f"Executed SQL/Code:\n{code or 'N/A'}\n\n"
-        f"Computed Facts:\n{json.dumps(facts, indent=2, default=str)}"
+        f"Computed Facts:\n{json.dumps(facts, indent=2, default=str)}\n\n"
+        "CRITICAL: Answer from the EXECUTED RESULT. "
+        "If a required dimension/metric appears in EXECUTED RESULT COLUMNS, "
+        "never say that category/city/segment/discount analysis is unavailable. "
+        "Prefer association over causation. "
+        "If margin values are nearly identical, say the practical difference is negligible "
+        "even if ranks differ — do not require statistical tests unless asked."
     )
 
 
@@ -575,13 +616,46 @@ def report_agent_node(state: AgentState) -> Dict[str, Any]:
     python_recommendations = generate_recommendations(question, schema_profile)
 
     analysis_source = (state.get("analysis_artifacts") or {}).get("analysis_source")
-    from backend.config import use_analytics_demo_fallback
+    artifacts = dict(state.get("analysis_artifacts") or {})
     from backend.services.analytics_fallback import ANALYSIS_SOURCE_FALLBACK
-
-    use_deterministic_report = (
-        use_analytics_demo_fallback()
-        or analysis_source == ANALYSIS_SOURCE_FALLBACK
+    from backend.services.requirement_coverage import (
+        check_requirement_coverage,
+        confidence_from_coverage,
+        extract_question_requirements,
+        format_semantic_requirement_contract,
+        schema_column_names,
     )
+    from backend.services.reporting.report_grounding import (
+        build_evidence_summary,
+        check_report_grounding,
+        repair_report_text_for_grounding,
+        soften_causation_language,
+        margin_spread_points,
+    )
+
+    result_columns = list(query_result.get("columns") or [])
+    result_rows = list(query_result.get("rows") or [])
+    req = extract_question_requirements(question)
+    requirement_contract = (
+        artifacts.get("requirement_contract")
+        or format_semantic_requirement_contract(
+            req, schema_columns=schema_column_names(schema_profile)
+        )
+    )
+    cov_ok, cov_missing = check_requirement_coverage(
+        question,
+        code or "",
+        result_columns,
+        row_count=query_result.get("row_count") or len(result_rows),
+    )
+    artifacts["question_requirements"] = req.to_dict()
+    artifacts["requirement_contract"] = requirement_contract
+    artifacts["coverage_ok"] = cov_ok
+    artifacts["coverage_missing"] = list(cov_missing)
+
+    # Deterministic narrative only when analysis itself was deterministic — never
+    # because DEMO_MODE is on while an LLM provider is available.
+    use_deterministic_report = analysis_source == ANALYSIS_SOURCE_FALLBACK
 
     llm_output = None
     validation_err = None
@@ -590,40 +664,52 @@ def report_agent_node(state: AgentState) -> Dict[str, Any]:
         logger.warning(
             "Analytics DEMO MODE — building deterministic success report (skipping report LLM)."
         )
-        preview_rows = (query_result.get("rows") or [])[:5]
-        preview_cols = query_result.get("columns") or []
-        row_count = query_result.get("row_count") or len(query_result.get("rows") or [])
-        preview_bits = []
-        for row in preview_rows[:3]:
-            if isinstance(row, dict):
-                preview_bits.append(", ".join(f"{k}={v}" for k, v in list(row.items())[:4]))
-            elif isinstance(row, (list, tuple)):
-                preview_bits.append(", ".join(str(v) for v in row[:4]))
-        preview_text = "; ".join(preview_bits) if preview_bits else "see results table"
-        col_label = ", ".join(map(str, preview_cols[:8])) if preview_cols else "(none)"
+        evidence = build_evidence_summary(question, result_columns, result_rows)
+        spread = margin_spread_points(result_columns, result_rows)
+        insights = [
+            Insight(
+                title="Analysis source",
+                body=(
+                    "deterministic_fallback — schema inspection + safe DuckDB SQL templates. "
+                    "Conclusions are grounded in executed result columns, not a live LLM narrative."
+                ),
+            )
+        ]
+        if spread is not None and spread < 0.5:
+            insights.append(
+                Insight(
+                    title="Practical margin spread",
+                    body=(
+                        f"Profit margin spread across groups is ~{spread:.4f} percentage points, "
+                        "so ranking differences may not indicate a large practical profitability gap."
+                    ),
+                )
+            )
         llm_output = LLMReportOutput(
             title="Demo Analysis Results",
             executive_summary=ExecutiveSummary(
-                headline="Analysis completed successfully.",
-                summary=(
-                    f"Ran a deterministic schema-aware query over the loaded dataset "
-                    f"({row_count} result row(s)). Columns: {col_label}. "
-                    f"Sample: {preview_text}.\n\n"
-                    "This response used Demo Analysis Mode (not a live LLM). "
-                    "Configure a valid GROQ_API_KEY to enable full LLM-powered planning and narrative."
-                ),
-                confidence="High",
+                headline="Analysis completed using executed results as the source of truth.",
+                summary=evidence,
+                confidence="Medium",
             ),
-            insights=[
-                Insight(
-                    title="Analysis source",
-                    body="deterministic_fallback — schema inspection + safe DuckDB SQL templates.",
-                )
-            ],
+            insights=insights,
             recommendations=[],
         )
     else:
-        user_prompt = _build_user_prompt(question, code, facts, plan_steps, result_family)
+        user_prompt = _build_user_prompt(
+            question,
+            code,
+            facts,
+            plan_steps,
+            result_family,
+            schema_columns=schema_column_names(schema_profile),
+            result_columns=result_columns,
+            result_preview=result_rows[:8],
+            requirement_contract=requirement_contract,
+            coverage_ok=cov_ok,
+            coverage_missing=list(cov_missing),
+            analysis_source=analysis_source,
+        )
         system_prompt = _get_dynamic_system_prompt(report_mode, result_family)
 
         for attempt in range(2):  # try → retry once on validation failure
@@ -645,16 +731,69 @@ def report_agent_node(state: AgentState) -> Dict[str, Any]:
                 logger.error(f"Report Agent LLM attempt {attempt + 1} — unexpected error: {exc}")
 
     if llm_output is None:
-        # Hard fallback
+        # Hard fallback — still evidence-first
         llm_output = LLMReportOutput(
             title="Analysis Complete",
             executive_summary=ExecutiveSummary(
                 headline="Analysis executed successfully.",
-                summary="The query ran successfully. Please review the results table for detailed findings.",
+                summary=build_evidence_summary(question, result_columns, result_rows),
                 confidence="Medium",
             ),
             insights=[],
             recommendations=[],
+        )
+
+    # Deterministic grounding guard (no second LLM pipeline)
+    report_blob = " ".join(
+        [
+            llm_output.title or "",
+            llm_output.executive_summary.headline or "",
+            llm_output.executive_summary.summary or "",
+        ]
+        + [f"{i.title} {i.body}" for i in (llm_output.insights or [])]
+    )
+    ground_ok, ground_issues = check_report_grounding(
+        report_text=report_blob,
+        result_columns=result_columns,
+        result_rows=result_rows,
+        coverage_ok=cov_ok,
+        question=question,
+    )
+    if not ground_ok:
+        logger.warning("Report grounding check failed: %s", ground_issues)
+        new_headline, new_summary = repair_report_text_for_grounding(
+            summary=llm_output.executive_summary.summary or "",
+            headline=llm_output.executive_summary.headline or "",
+            question=question,
+            columns=result_columns,
+            rows=result_rows,
+            issues=ground_issues,
+        )
+        llm_output.executive_summary.headline = new_headline
+        llm_output.executive_summary.summary = new_summary
+        # Soften causation in insights in-place
+        for ins in llm_output.insights or []:
+            ins.body = soften_causation_language(ins.body or "")
+            ins.title = soften_causation_language(ins.title or "")
+        artifacts["report_grounding_ok"] = False
+        artifacts["report_grounding_issues"] = list(ground_issues)
+    else:
+        artifacts["report_grounding_ok"] = True
+        artifacts["report_grounding_issues"] = []
+
+    # Confidence from semantic coverage + evidence (execution ≠ High by itself)
+    conf = confidence_from_coverage(
+        coverage_ok=cov_ok,
+        missing=cov_missing,
+        analysis_source=analysis_source,
+        execution_success=True,
+        evidence_limited=(not result_columns or len(result_rows) == 0),
+    )
+    llm_output.executive_summary.confidence = conf
+    if not cov_ok and llm_output.executive_summary.summary:
+        llm_output.executive_summary.summary = (
+            llm_output.executive_summary.summary
+            + f"\n\nNote: some question requirements may be only partially covered ({', '.join(cov_missing)})."
         )
 
     # ── Build tables from query_result ───────────────────────────────────────
@@ -678,7 +817,7 @@ def report_agent_node(state: AgentState) -> Dict[str, Any]:
         })
 
     # ── Build tables from analysis_artifacts ─────────────────────────────────
-    analysis_artifacts = state.get("analysis_artifacts") or {}
+    analysis_artifacts = artifacts
     if "correlation_matrix" in analysis_artifacts:
         corr = analysis_artifacts["correlation_matrix"]
         if isinstance(corr, dict) and corr:
@@ -740,6 +879,21 @@ def report_agent_node(state: AgentState) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"PDF generation failed: {e}")
 
+    # Accurate provider/model metadata — never invent; never leave Unknown when known
+    provider_meta = artifacts.get("provider")
+    model_meta = artifacts.get("model")
+    if not provider_meta:
+        if analysis_source == ANALYSIS_SOURCE_FALLBACK or use_deterministic_report:
+            provider_meta = "Deterministic Fallback"
+        elif analysis_source == "gemini":
+            provider_meta = "Gemini"
+        elif analysis_source == "groq":
+            provider_meta = "Groq"
+    if not model_meta and (
+        analysis_source == ANALYSIS_SOURCE_FALLBACK or use_deterministic_report
+    ):
+        model_meta = "schema-aware-sql"
+
     # ── Assemble final_report dict ────────────────────────────────────────────
     final_report = {
         "success": True,
@@ -763,8 +917,12 @@ def report_agent_node(state: AgentState) -> Dict[str, Any]:
                 else llm_output.llm_reasoning
             ),
             "analysis_source": analysis_source or (
-                ANALYSIS_SOURCE_FALLBACK if use_deterministic_report else "llm"
+                ANALYSIS_SOURCE_FALLBACK if use_deterministic_report else None
             ),
+            "provider": provider_meta,
+            "model": model_meta,
+            "coverage_ok": cov_ok,
+            "report_grounding_ok": artifacts.get("report_grounding_ok"),
         },
         "pdf_path": pdf_path,
     }
@@ -797,7 +955,8 @@ def report_agent_node(state: AgentState) -> Dict[str, Any]:
     updates = {
         "final_report": final_report,
         "execution_metadata": execution_metadata,
-        "last_worker_result": worker_result
+        "last_worker_result": worker_result,
+        "analysis_artifacts": artifacts,
     }
     
     if not graceful_failure:

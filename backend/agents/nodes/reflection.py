@@ -76,23 +76,43 @@ def reflection_node(state: AgentState) -> Dict[str, Any]:
             }
         else:
             approach = state.get("plan", {}).get("approach", "sql")
-            
-            if approach == "python":
-                logger.info(f"Retrying Python Analysis capability. Attempt {new_retry_count}/3. Failure type '{failure_type}'")
-                status = "failed"
-                error_msg = failure_summary.get("error_message")
-                routing_hint = "PYTHON_ANALYSIS"
-            else:
-                logger.info(f"Retrying SQL capability. Attempt {new_retry_count}/3. Failure type '{failure_type}'")
-                status = "failed"
-                error_msg = failure_summary.get("error_message")
-                routing_hint = "SQL"
-                
+            expected_vs = (failure_summary.get("expected_vs_actual") or "").lower()
+            force_sql = (
+                failure_type in ("semantic", "semantic_incomplete")
+                and (
+                    "prefer sql" in expected_vs
+                    or "group by" in expected_vs
+                    or "global correlation" in expected_vs
+                    or "semantic_incomplete" in expected_vs
+                )
+            )
+
+            status = "failed"
+            error_msg = failure_summary.get("error_message")
             updates = {
                 "retry_count": new_retry_count,
                 "retry_history": retry_history,
-                "graceful_failure": False
+                "graceful_failure": False,
             }
+
+            if approach == "python" and not force_sql:
+                logger.info(
+                    "Retrying Python Analysis capability. Attempt %s/3. Failure type '%s'",
+                    new_retry_count,
+                    failure_type,
+                )
+                routing_hint = "PYTHON_ANALYSIS"
+            else:
+                logger.info(
+                    "Retrying SQL capability. Attempt %s/3. Failure type '%s'",
+                    new_retry_count,
+                    failure_type,
+                )
+                routing_hint = "SQL"
+                if force_sql:
+                    updates_plan = dict(state.get("plan") or {})
+                    updates_plan["approach"] = "sql"
+                    updates["plan"] = updates_plan
 
     # Record metrics
     end_time = time.time()

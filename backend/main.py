@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from charset_normalizer import detect
 
 # Import configurations & helpers
-from backend.config import DATABASE_URL
+from backend.config import DATABASE_URL, log_provider_startup_diagnostics, get_uploads_root, get_scratch_root
 from backend.database.connection import init_db, get_pool, close_pool, get_db_connection
 from backend.database.repository import (
     create_session, 
@@ -43,6 +43,7 @@ async def session_cleanup_scheduler():
 async def lifespan(app: FastAPI):
     global agent_graph, db_pool
     logger.info("Starting up FastAPI application...")
+    log_provider_startup_diagnostics()
     
     # 1. Initialize DuckDB Session Manager (logs dynamically inside constructor)
     logger.info("Initializing DuckDB session manager...")
@@ -125,7 +126,7 @@ app.add_middleware(
 )
 
 # Temp upload folder
-UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "uploads"))
+UPLOAD_DIR = str(get_uploads_root())
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Global variables for compiled graph and pool
@@ -137,6 +138,16 @@ db_pool = None
 class AnalyzeRequest(BaseModel):
     session_id: str
     question: str
+
+@app.get("/health")
+async def health():
+    """Lightweight health probe for Render / load balancers."""
+    return {
+        "status": "ok",
+        "service": "marketmind-api",
+        "agent_ready": agent_graph is not None,
+    }
+
 
 # Endpoints
 def normalize_encoding(content: bytes) -> bytes:
@@ -220,7 +231,7 @@ async def upload_csv(file: UploadFile = File(...)):
     dataset_id = f"uploaded_data_{uuid.uuid4().hex[:8]}"
     
     # Save directly to the session's scratch directory
-    scratch_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "scratch", session_id))
+    scratch_dir = os.path.join(str(get_scratch_root()), session_id)
     os.makedirs(scratch_dir, exist_ok=True)
     temp_file_path = os.path.join(scratch_dir, f"{dataset_id}.csv")
     
@@ -635,6 +646,58 @@ async def analyze_data(request: AnalyzeRequest):
             "columns": 0,
         })
 
+        artifacts = final_state.get("analysis_artifacts") or {}
+        analysis_source = artifacts.get("analysis_source") or (
+            final_report.get("debug") or {}
+        ).get("analysis_source")
+        provider_name = artifacts.get("provider")
+        model_name = artifacts.get("model")
+        if not provider_name:
+            if analysis_source == "deterministic_fallback":
+                provider_name = "Deterministic Fallback"
+                model_name = model_name or "schema-aware-sql"
+            elif analysis_source == "gemini":
+                provider_name = "Gemini"
+            elif analysis_source == "groq":
+                provider_name = "Groq"
+            elif analysis_source == "llm":
+                # Legacy source tag — prefer configured primary provider label
+                from backend.config import preferred_analytics_provider
+                pref = preferred_analytics_provider()
+                provider_name = {
+                    "groq": "Groq",
+                    "gemini": "Gemini",
+                    "deterministic": "Deterministic Fallback",
+                }.get(pref, "Deterministic Fallback")
+            else:
+                # Last resort: infer from preferred runtime config, never "Unknown"
+                from backend.config import preferred_analytics_provider
+                pref = preferred_analytics_provider()
+                if success and pref != "deterministic":
+                    provider_name = "Groq" if pref == "groq" else "Gemini"
+                else:
+                    provider_name = "Deterministic Fallback"
+                    model_name = model_name or "schema-aware-sql"
+        if not model_name:
+            from backend.config import GROQ_MODEL, GEMINI_FALLBACK_MODEL
+            if provider_name == "Gemini":
+                model_name = GEMINI_FALLBACK_MODEL
+            elif provider_name == "Deterministic Fallback":
+                model_name = "schema-aware-sql"
+            elif provider_name == "Groq":
+                model_name = GROQ_MODEL
+            else:
+                model_name = "schema-aware-sql"
+
+        # Ensure debug carries accurate analysis_source
+        debug_block = dict(final_report.get("debug") or {})
+        if analysis_source:
+            debug_block["analysis_source"] = analysis_source
+        debug_block.setdefault("generated_code", None)
+        debug_block.setdefault("execution_mode", None)
+        debug_block.setdefault("execution_plan", None)
+        debug_block.setdefault("llm_reasoning", None)
+
         response_body = {
             "success": success,
             "dataset": dataset_block,
@@ -642,8 +705,8 @@ async def analyze_data(request: AnalyzeRequest):
                 "question":          question,
                 "execution_time_ms": round(execution_time_ms, 2),
                 "execution_id":      execution_id,
-                "provider":          "Groq",
-                "model":             "llama-3.3-70b-versatile",
+                "provider":          provider_name,
+                "model":             model_name,
                 "retry_count":       retry_count,
             },
             "report": final_report.get("report", {
@@ -654,12 +717,7 @@ async def analyze_data(request: AnalyzeRequest):
                 "insights":          [],
                 "recommendations":   [],
             }),
-            "debug": final_report.get("debug", {
-                "generated_code":  None,
-                "execution_mode":  None,
-                "execution_plan": None,
-                "llm_reasoning":  None,
-            }),
+            "debug": debug_block,
         }
 
         # Sanitize response to prevent JSON serialization crashes on NaNs/Infs

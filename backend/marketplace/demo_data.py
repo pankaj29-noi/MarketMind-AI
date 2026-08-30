@@ -91,9 +91,10 @@ def is_marketplace_dataset(dataset_id: Optional[str], dataset_name: Optional[str
 
 
 def _scratch_dir(session_id: str) -> str:
-    return os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "scratch", session_id)
-    )
+    from backend.config import get_scratch_root
+
+    path = os.path.join(str(get_scratch_root()), session_id)
+    return os.path.abspath(path)
 
 
 def _copy_seed_csvs_to_scratch(session_id: str) -> Dict[str, str]:

@@ -13,6 +13,14 @@ from backend.config import get_llm
 
 def _get_deterministic_routing(question: str) -> Optional[str]:
     q_lower = question.lower()
+
+    # Prefer SQL when a relationship/association is requested *across a dimension*
+    # (global-only correlation would drop the required GROUP BY).
+    if (
+        any(w in q_lower for w in ("relationship", "associated", "association", "correlat"))
+        and any(w in q_lower for w in ("across", "categor", "segment", "region", "city", "by "))
+    ):
+        return "SQL"
     
     # 1. High-priority Python Analysis phrases
     python_phrases = [
@@ -32,7 +40,8 @@ def _get_deterministic_routing(question: str) -> Optional[str]:
         
     # 3. Obvious SQL retrieval/aggregation keywords
     sql_keywords = [
-        "average", "count", "sum", "top", "bottom", "group by", "order by", "limit"
+        "average", "count", "sum", "top", "bottom", "group by", "order by", "limit",
+        "sales", "profit", "margin", "discount", "compare", "highest", "lowest",
     ]
     if any(keyword in q_lower for keyword in sql_keywords):
         return "SQL"
@@ -98,7 +107,8 @@ The last worker to run was {worker_name}.
 
 Analyze the user's question and decide the next logical capability.
 If the question requires custom mathematical manipulation, regex, fuzzy matching, or complex transformations not easily done in SQL, choose PYTHON_ANALYSIS.
-If the question asks for statistical analysis like correlation, trend, distribution, or outliers, choose ANALYSIS.
+If the question asks for statistical analysis like correlation, trend, distribution, or outliers *without* requiring breakdowns across categories/segments/regions, choose ANALYSIS.
+If the question asks for a relationship/association across categories (or segments/regions) involving metrics like discount, sales, and profit margin, choose SQL (GROUP BY that dimension). Do NOT choose ANALYSIS for a single global correlation in that case.
 If the question asks for data retrieval, grouping, joins, GMV, conversion rates, or general querying, choose SQL.
 
 Respond ONLY with a JSON object in this format:
@@ -111,13 +121,15 @@ Respond ONLY with a JSON object in this format:
 }}
 """
     try:
-        llm = get_llm(temperature=0.0)
-        response = llm.invoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=f"User Question: {question}")
-        ])
-        
-        content = response.content.strip()
+        from backend.config import invoke_llm
+        inv = invoke_llm(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=f"User Question: {question}"),
+            ],
+            temperature=0.0,
+        )
+        content = (inv.get("content") or "").strip()
         if content.startswith("```json"):
             content = content[7:]
         if content.endswith("```"):

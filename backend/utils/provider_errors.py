@@ -18,6 +18,8 @@ def is_provider_auth_or_config_error(error_message: str) -> bool:
         "api key is invalid",
         "your_groq_api_key",
         "your_gemini_api_key",
+        "all llm providers failed",
+        "no valid llm",
     )
     return any(m in text for m in markers)
 

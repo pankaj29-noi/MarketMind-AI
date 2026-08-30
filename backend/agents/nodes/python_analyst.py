@@ -83,9 +83,9 @@ def python_analyst_node(state: AgentState) -> Dict[str, Any]:
         ))
         
     try:
-        llm = get_llm(temperature=0.0)
-        response = llm.invoke(messages)
-        content = response.content.strip()
+        from backend.config import invoke_llm
+        inv = invoke_llm(messages, temperature=0.0)
+        content = (inv.get("content") or "").strip()
         
         # Clean markdown code fences if LLM accidentally emitted them
         if content.startswith("```json"):
@@ -99,12 +99,17 @@ def python_analyst_node(state: AgentState) -> Dict[str, Any]:
         generated_code = output_data.get("generated_code", "")
         
         logger.info(f"Generated Python plan: {plan.get('strategy_summary')}")
+        artifacts = dict(state.get("analysis_artifacts") or {})
+        artifacts["analysis_source"] = inv.get("analysis_source")
+        artifacts["provider"] = inv.get("provider")
+        artifacts["model"] = inv.get("model")
         
         return {
             "plan": plan,
             "expected_output_type": plan.get("expected_output"),
             "generated_code": generated_code,
             "execution_success": False, # Reset execution status for the next node
+            "analysis_artifacts": artifacts,
             "execution_metadata": list(state.get("execution_metadata") or []) + [{
                 "node_name": node_name,
                 "start_time": start_time,
