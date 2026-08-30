@@ -90,7 +90,15 @@ def _tokenize(text: str) -> List[str]:
         "we", "me", "some", "any", "high", "quality",
     }
     tokens = re.findall(r"[a-z0-9]+", (text or "").lower())
-    return [t for t in tokens if len(t) > 1 and t not in stop]
+    out: List[str] = []
+    for t in tokens:
+        if len(t) <= 1 or t in stop:
+            continue
+        # Light plural fold so "pumps" matches "pump", "panels"→"panel"
+        if t.endswith("s") and len(t) > 3 and not t.endswith("ss"):
+            t = t[:-1]
+        out.append(t)
+    return out
 
 
 def _token_overlap_score(query_tokens: List[str], candidate: str) -> float:
@@ -102,7 +110,7 @@ def _token_overlap_score(query_tokens: List[str], candidate: str) -> float:
     qset = set(query_tokens)
     inter = qset & cand_tokens
     if not inter:
-        # substring soft match
+        # substring soft match (also try singularized candidate text)
         cl = candidate.lower()
         hits = sum(1 for t in qset if t in cl)
         return hits / max(len(qset), 1) * 0.7
@@ -144,7 +152,6 @@ def search_products(
         return []
 
     tokens = _expand_query_tokens(_tokenize(query_bits), product_name, product_category)
-    core_tokens = _tokenize(query_bits)[:4] or tokens[:4]
 
     # Multi-pass retrieval so common tokens like "industrial" don't crowd out better matches
     row_map: Dict[int, Dict[str, Any]] = {}
@@ -174,14 +181,21 @@ def search_products(
         LEFT JOIN categories c ON c.id = p.category_id
     """
 
-    # Pass 1: full phrase
+    # Pass 1: full phrase (+ singularized phrase for "pumps" vs "pump")
     phrase = (product_name or query_bits).lower()
-    _ingest(
-        base_select + " WHERE LOWER(p.name) LIKE ? OR LOWER(c.name) LIKE ? LIMIT 40",
-        [f"%{phrase}%", f"%{phrase}%"],
-    )
+    phrases = {phrase}
+    if phrase.endswith("s") and len(phrase) > 4:
+        phrases.add(phrase[:-1])
+    for ph in phrases:
+        _ingest(
+            base_select + " WHERE LOWER(p.name) LIKE ? OR LOWER(c.name) LIKE ? LIMIT 40",
+            [f"%{ph}%", f"%{ph}%"],
+        )
 
     # Pass 2: require all core tokens in name (strong match)
+    # Prefer tokens from product_name so category words don't over-constrain
+    core_source = product_name or query_bits
+    core_tokens = _tokenize(core_source)[:4] or tokens[:4]
     if len(core_tokens) >= 2:
         and_clauses = " AND ".join(["LOWER(p.name) LIKE ?"] * len(core_tokens))
         _ingest(
@@ -206,19 +220,31 @@ def search_products(
     if not row_map:
         return []
 
-    # Score using original query tokens (not synonym-inflated set) for fairness
-    score_tokens = _tokenize(query_bits) or tokens
+    # Score primarily on product_name so category labels don't drown product intent
+    # (e.g. "Industrial Equipment" must not outrank "water pump" name matches).
+    score_tokens = _tokenize(product_name or "") or _tokenize(query_bits) or tokens
+    # Drop ultra-generic tokens that appear in many industrial SKUs
+    generic = {"industrial", "equipment", "product", "products", "material", "materials"}
+    distinctive = [t for t in score_tokens if t not in generic]
+    if distinctive:
+        score_tokens = distinctive
+
     scored: List[Dict[str, Any]] = []
     for row in row_map.values():
         name = str(row.get("name") or "")
         cat = str(row.get("category_name") or "")
         name_score = _token_overlap_score(score_tokens, name)
-        cat_score = _token_overlap_score(score_tokens, cat) * 0.85
+        cat_score = 0.0
         if product_category and cat:
-            if product_category.lower() in cat.lower() or cat.lower() in product_category.lower():
-                cat_score = max(cat_score, 0.9)
-        score = max(name_score, cat_score)
-        if product_name and product_name.lower() in name.lower():
+            if (
+                product_category.lower() in cat.lower()
+                or cat.lower() in product_category.lower()
+            ):
+                cat_score = 0.25  # soft boost only
+            else:
+                cat_score = _token_overlap_score(_tokenize(product_category), cat) * 0.4
+        score = min(1.0, name_score + cat_score)
+        if product_name and product_name.lower().rstrip("s") in name.lower():
             score = max(score, 0.95)
         # Soft boost when synonym tokens appear in the product name
         syn_hits = sum(1 for t in tokens if t not in score_tokens and t in name.lower())
@@ -229,7 +255,7 @@ def search_products(
         reason_parts = []
         if name_score >= cat_score:
             reason_parts.append("name match")
-        if cat_score >= 0.5:
+        if cat_score >= 0.2:
             reason_parts.append(f"category '{cat}'")
         scored.append(
             {
