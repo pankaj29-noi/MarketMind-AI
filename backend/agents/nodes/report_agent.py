@@ -573,30 +573,76 @@ def report_agent_node(state: AgentState) -> Dict[str, Any]:
 
     # 3. Compute Deterministic Recommendations
     python_recommendations = generate_recommendations(question, schema_profile)
-    
-    user_prompt = _build_user_prompt(question, code, facts, plan_steps, result_family)
-    system_prompt = _get_dynamic_system_prompt(report_mode, result_family)
+
+    analysis_source = (state.get("analysis_artifacts") or {}).get("analysis_source")
+    from backend.config import use_analytics_demo_fallback
+    from backend.services.analytics_fallback import ANALYSIS_SOURCE_FALLBACK
+
+    use_deterministic_report = (
+        use_analytics_demo_fallback()
+        or analysis_source == ANALYSIS_SOURCE_FALLBACK
+    )
 
     llm_output = None
     validation_err = None
 
-    for attempt in range(2):  # try → retry once on validation failure
-        try:
-            llm_output = _call_llm_for_report(
-                system_prompt,
-                user_prompt,
-                validation_error=validation_err,
-            )
-            break
-        except ValidationError as exc:
-            validation_err = str(exc)
-            logger.warning(f"Report Agent LLM attempt {attempt + 1} — ValidationError: {exc}")
-        except json.JSONDecodeError as exc:
-            validation_err = f"JSON decode error: {exc}"
-            logger.warning(f"Report Agent LLM attempt {attempt + 1} — JSONDecodeError: {exc}")
-        except Exception as exc:
-            validation_err = str(exc)
-            logger.error(f"Report Agent LLM attempt {attempt + 1} — unexpected error: {exc}")
+    if use_deterministic_report:
+        logger.warning(
+            "Analytics DEMO MODE — building deterministic success report (skipping report LLM)."
+        )
+        preview_rows = (query_result.get("rows") or [])[:5]
+        preview_cols = query_result.get("columns") or []
+        row_count = query_result.get("row_count") or len(query_result.get("rows") or [])
+        preview_bits = []
+        for row in preview_rows[:3]:
+            if isinstance(row, dict):
+                preview_bits.append(", ".join(f"{k}={v}" for k, v in list(row.items())[:4]))
+            elif isinstance(row, (list, tuple)):
+                preview_bits.append(", ".join(str(v) for v in row[:4]))
+        preview_text = "; ".join(preview_bits) if preview_bits else "see results table"
+        col_label = ", ".join(map(str, preview_cols[:8])) if preview_cols else "(none)"
+        llm_output = LLMReportOutput(
+            title="Demo Analysis Results",
+            executive_summary=ExecutiveSummary(
+                headline="Analysis completed successfully.",
+                summary=(
+                    f"Ran a deterministic schema-aware query over the loaded dataset "
+                    f"({row_count} result row(s)). Columns: {col_label}. "
+                    f"Sample: {preview_text}.\n\n"
+                    "This response used Demo Analysis Mode (not a live LLM). "
+                    "Configure a valid GROQ_API_KEY to enable full LLM-powered planning and narrative."
+                ),
+                confidence="High",
+            ),
+            insights=[
+                Insight(
+                    title="Analysis source",
+                    body="deterministic_fallback — schema inspection + safe DuckDB SQL templates.",
+                )
+            ],
+            recommendations=[],
+        )
+    else:
+        user_prompt = _build_user_prompt(question, code, facts, plan_steps, result_family)
+        system_prompt = _get_dynamic_system_prompt(report_mode, result_family)
+
+        for attempt in range(2):  # try → retry once on validation failure
+            try:
+                llm_output = _call_llm_for_report(
+                    system_prompt,
+                    user_prompt,
+                    validation_error=validation_err,
+                )
+                break
+            except ValidationError as exc:
+                validation_err = str(exc)
+                logger.warning(f"Report Agent LLM attempt {attempt + 1} — ValidationError: {exc}")
+            except json.JSONDecodeError as exc:
+                validation_err = f"JSON decode error: {exc}"
+                logger.warning(f"Report Agent LLM attempt {attempt + 1} — JSONDecodeError: {exc}")
+            except Exception as exc:
+                validation_err = str(exc)
+                logger.error(f"Report Agent LLM attempt {attempt + 1} — unexpected error: {exc}")
 
     if llm_output is None:
         # Hard fallback
@@ -711,7 +757,14 @@ def report_agent_node(state: AgentState) -> Dict[str, Any]:
             "generated_code": code or None,
             "execution_mode": state.get("plan", {}).get("approach", "DETERMINISTIC").upper(),
             "execution_plan": plan_steps,
-            "llm_reasoning": llm_output.llm_reasoning,
+            "llm_reasoning": (
+                "Deterministic DEMO MODE report. LLM bypassed."
+                if use_deterministic_report
+                else llm_output.llm_reasoning
+            ),
+            "analysis_source": analysis_source or (
+                ANALYSIS_SOURCE_FALLBACK if use_deterministic_report else "llm"
+            ),
         },
         "pdf_path": pdf_path,
     }

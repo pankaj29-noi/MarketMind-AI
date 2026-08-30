@@ -2,7 +2,7 @@ import json
 import logging
 from typing import Dict, Any
 from backend.agents.state import AgentState, get_effective_question
-from backend.config import get_llm
+from backend.config import get_llm, use_analytics_demo_fallback
 from langchain_core.messages import SystemMessage, HumanMessage
 
 logger = logging.getLogger(__name__)
@@ -91,8 +91,64 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
     generated_code = ""
 
     from backend.marketplace.demo_data import format_schema_context_for_llm
+    from backend.services.analytics_fallback import (
+        resolve_analytics_fallback,
+        unsupported_analytics_message,
+        ANALYSIS_SOURCE_FALLBACK,
+        ANALYSIS_SOURCE_LLM,
+    )
+
+    def _finish(code: str, *, source: str, failed: bool = False, failure: dict | None = None):
+        end_time = time.time()
+        duration_ms = (end_time - start_time) * 1000
+        node_metadata = {
+            "node_name": node_name,
+            "start_time": start_time,
+            "end_time": end_time,
+            "duration_ms": duration_ms,
+            "status": "failed" if failed else "success",
+            "retry_count": retry_count,
+            "error_message": None if not failed else (failure or {}).get("error_message"),
+        }
+        execution_metadata = list(state.get("execution_metadata") or [])
+        execution_metadata.append(node_metadata)
+        artifacts = dict(state.get("analysis_artifacts") or {})
+        artifacts["analysis_source"] = source
+        out = {
+            "generated_code": code,
+            "execution_metadata": execution_metadata,
+            "analysis_artifacts": artifacts,
+            "failure_summary": failure,
+        }
+        return out
 
     schema_context = format_schema_context_for_llm(schema_profile or {}, fallback_table=table_name)
+
+    # DEMO MODE: try deterministic schema-aware SQL before calling the LLM.
+    if approach == "sql" and use_analytics_demo_fallback():
+        fallback = resolve_analytics_fallback(question, schema_profile or {}, dataset_id)
+        if fallback.sql:
+            logger.warning(
+                "Analytics DEMO MODE — using deterministic SQL fallback (skipping LLM)."
+            )
+            return _finish(fallback.sql, source=ANALYSIS_SOURCE_FALLBACK)
+        logger.warning(
+            "Analytics DEMO MODE — no deterministic SQL for question (reason=%s).",
+            fallback.reason,
+        )
+        return _finish(
+            "",
+            source=ANALYSIS_SOURCE_FALLBACK,
+            failed=True,
+            failure={
+                "failure_type": "unsupported_question",
+                "error_message": unsupported_analytics_message(
+                    fallback.reason, schema_profile or {}, dataset_id
+                ),
+                "code_context": "",
+                "expected_vs_actual": fallback.reason,
+            },
+        )
 
     if approach == "sql":
         system_prompt = SQL_GENERATOR_PROMPT.format(table_name=table_name, schema_context=schema_context, question=question, plan_steps=plan_steps)
@@ -138,6 +194,7 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
 
         generated_code = code
         logger.info(f"Generated {approach.upper()} code successfully.")
+        return _finish(generated_code, source=ANALYSIS_SOURCE_LLM)
     except Exception as e:
         logger.error(f"Error in Code Generator Node: {e}")
         status = "failed"
@@ -146,8 +203,6 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
             is_provider_auth_or_config_error,
             provider_error_user_message,
         )
-        from backend.marketplace.demo_data import MARKETPLACE_DATASET_ID
-        from backend.marketplace.sql_fallback import resolve_marketplace_fallback
 
         error_str = error_msg.lower()
         is_rate_limited = (
@@ -157,109 +212,43 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
         )
         is_provider = is_rate_limited or is_provider_auth_or_config_error(error_msg)
 
-        # Marketplace demo offline path: deterministic SQL when LLM keys are invalid.
-        if (
-            is_provider
-            and approach == "sql"
-            and dataset_id == MARKETPLACE_DATASET_ID
-        ):
-            from backend.marketplace.sql_fallback import (
-                resolve_marketplace_fallback,
-                unsupported_user_message,
-            )
-            fallback = resolve_marketplace_fallback(question)
+        # Provider/auth failure → deterministic fallback for any loaded dataset
+        if is_provider and approach == "sql":
+            fallback = resolve_analytics_fallback(question, schema_profile or {}, dataset_id)
             if fallback.sql:
                 logger.warning(
-                    "Using marketplace SQL fallback after LLM provider failure "
-                    "(source=%s).",
-                    fallback.analysis_source,
+                    "LLM provider unavailable — using deterministic analytics fallback."
                 )
-                status = "success"
-                error_msg = None
-                generated_code = fallback.sql
-                end_time = time.time()
-                duration_ms = (end_time - start_time) * 1000
-                node_metadata = {
-                    "node_name": node_name,
-                    "start_time": start_time,
-                    "end_time": end_time,
-                    "duration_ms": duration_ms,
-                    "status": status,
-                    "retry_count": retry_count,
-                    "error_message": None,
-                }
-                execution_metadata = list(state.get("execution_metadata") or [])
-                execution_metadata.append(node_metadata)
-                return {
-                    "generated_code": generated_code,
-                    "execution_metadata": execution_metadata,
-                    "failure_summary": None,
-                    "analysis_artifacts": {
-                        "analysis_source": fallback.analysis_source,
-                    },
-                }
-
-            # No safe SQL template — graceful unsupported response (not System Failure)
-            logger.warning(
-                "Marketplace question not answerable via deterministic fallback "
-                "(reason=%s).",
-                fallback.reason,
-            )
-            end_time = time.time()
-            duration_ms = (end_time - start_time) * 1000
-            node_metadata = {
-                "node_name": node_name,
-                "start_time": start_time,
-                "end_time": end_time,
-                "duration_ms": duration_ms,
-                "status": "failed",
-                "retry_count": retry_count,
-                "error_message": fallback.reason,
-            }
-            execution_metadata = list(state.get("execution_metadata") or [])
-            execution_metadata.append(node_metadata)
-            return {
-                "generated_code": "",
-                "execution_metadata": execution_metadata,
-                "failure_summary": {
+                return _finish(fallback.sql, source=ANALYSIS_SOURCE_FALLBACK)
+            return _finish(
+                "",
+                source=ANALYSIS_SOURCE_FALLBACK,
+                failed=True,
+                failure={
                     "failure_type": "unsupported_question",
-                    "error_message": unsupported_user_message(fallback.reason),
+                    "error_message": unsupported_analytics_message(
+                        fallback.reason, schema_profile or {}, dataset_id
+                    ),
                     "code_context": "",
                     "expected_vs_actual": fallback.reason,
                 },
-                "analysis_artifacts": {
-                    "analysis_source": "deterministic_fallback",
-                },
-            }
+            )
 
         if is_provider:
             logger.error("Provider chain exhausted. Skipping agent retry loop.")
-            # Record metrics here since we are returning early
-            end_time = time.time()
-            duration_ms = (end_time - start_time) * 1000
-            node_metadata = {
-                "node_name": node_name,
-                "start_time": start_time,
-                "end_time": end_time,
-                "duration_ms": duration_ms,
-                "status": status,
-                "retry_count": retry_count,
-                "error_message": error_msg
-            }
-            execution_metadata = list(state.get("execution_metadata") or [])
-            execution_metadata.append(node_metadata)
-            return {
-                "generated_code": generated_code,
-                "execution_metadata": execution_metadata,
-                "failure_summary": {
+            return _finish(
+                generated_code,
+                source=ANALYSIS_SOURCE_LLM,
+                failed=True,
+                failure={
                     "failure_type": "provider_error",
                     "error_message": provider_error_user_message(error_msg),
                     "code_context": "",
-                    "expected_vs_actual": error_msg
-                }
-            }
+                    "expected_vs_actual": error_msg,
+                },
+            )
 
-    # Record metrics
+    # Record metrics (non-provider unexpected path with empty code)
     end_time = time.time()
     duration_ms = (end_time - start_time) * 1000
     logger.info(f"Node completed: {node_name} in {duration_ms:.2f}ms | Status: {status}")

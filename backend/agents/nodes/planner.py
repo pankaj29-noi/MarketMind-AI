@@ -2,7 +2,7 @@ import json
 import logging
 from typing import Dict, Any
 from backend.agents.state import AgentState, get_effective_question
-from backend.config import get_llm
+from backend.config import get_llm, use_analytics_demo_fallback
 from langchain_core.messages import SystemMessage, HumanMessage
 
 logger = logging.getLogger(__name__)
@@ -59,119 +59,129 @@ def planner_node(state: AgentState) -> Dict[str, Any]:
     status = "success"
     error_msg = None
     updates = {}
-    
+
     from backend.marketplace.demo_data import format_schema_context_for_llm
 
     schema_context = format_schema_context_for_llm(schema_profile or {}, fallback_table=table_name)
 
-    messages = [
-        SystemMessage(content=PLANNER_SYSTEM_PROMPT.format(table_name=table_name)),
-        HumanMessage(content=f"Dataset Schema:\n{schema_context}\n\nUser Question:\n{question}")
-    ]
+    def _demo_sql_plan() -> Dict[str, Any]:
+        return {
+            "steps": [
+                "Inspect available DuckDB schema and columns",
+                "Map question intent to aggregation / ranking / grouping",
+                "Generate and validate safe SELECT SQL",
+                "Execute against DuckDB and summarize results",
+            ],
+            "approach": "sql",
+            "expected_output_type": "dataframe",
+            "planning_source": "deterministic_fallback",
+        }
 
-    # If we are retrying due to semantic failure
-    if retry_history:
-        semantic_failures = [f for f in retry_history if f["failure_type"] == "semantic"]
-        if semantic_failures:
-            logger.info("Injecting semantic failure history into Planner context.")
-            failures_context = "\n---\n".join([
-                f"Attempt {i+1} Failure:\n"
-                f"- Failure Type: {f['failure_type']}\n"
-                f"- Error Message: {f['error_message']}\n"
-                f"- Code/SQL Executed: {f['code_context']}\n"
-                f"- Mismatch details: {f['expected_vs_actual']}"
-                for i, f in enumerate(semantic_failures)
-            ])
-            messages.append(HumanMessage(
-                content=f"ATTENTION: Previous attempts failed validation due to semantic mismatch. Here is the compressed history of failures:\n{failures_context}\n\nPlease adapt your plan to correct these issues."
-            ))
-
-    try:
-        llm = get_llm(temperature=0.1)
-        response = llm.invoke(messages)
-        
-        # Clean up code blocks if present
-        content = response.content.strip()
-        if content.startswith("```json"):
-            content = content[7:]
-        if content.endswith("```"):
-            content = content[:-3]
-        content = content.strip()
-
-        plan_data = json.loads(content, strict=False)
-        logger.info(f"Generated plan. Approach: {plan_data.get('approach')}, Expected Output: {plan_data.get('expected_output_type')}")
-        
+    # DEMO MODE: skip planner LLM so analytics can run without a valid API key.
+    if use_analytics_demo_fallback():
+        logger.warning(
+            "Analytics DEMO MODE — using deterministic SQL plan (skipping planner LLM)."
+        )
+        plan_data = _demo_sql_plan()
         updates = {
             "plan": plan_data,
             "expected_output_type": plan_data.get("expected_output_type"),
             "generated_code": None,
-            "execution_success": False
+            "execution_success": False,
+            "failure_summary": None,
         }
-    except Exception as e:
-        logger.error(f"Error in Planner Node: {e}")
-        status = "failed"
-        error_msg = str(e)
-        # Default plan to allow progression
-        fallback_plan = {
-            "steps": ["Retrieve data using SELECT *"],
-            "approach": "sql",
-            "expected_output_type": "dataframe"
-        }
-        from backend.utils.provider_errors import (
-            is_provider_auth_or_config_error,
-            provider_error_user_message,
-        )
-        from backend.marketplace.demo_data import MARKETPLACE_DATASET_ID
+    else:
+        messages = [
+            SystemMessage(content=PLANNER_SYSTEM_PROMPT.format(table_name=table_name)),
+            HumanMessage(content=f"Dataset Schema:\n{schema_context}\n\nUser Question:\n{question}")
+        ]
 
-        error_str = error_msg.lower()
-        is_rate_limited = (
-            "429" in error_str
-            or "resource_exhausted" in error_str
-            or "rate limit" in error_str
-        )
-        is_provider = is_rate_limited or is_provider_auth_or_config_error(error_msg)
-        dataset_id = state.get("dataset_id")
+        # If we are retrying due to semantic failure
+        if retry_history:
+            semantic_failures = [f for f in retry_history if f["failure_type"] == "semantic"]
+            if semantic_failures:
+                logger.info("Injecting semantic failure history into Planner context.")
+                failures_context = "\n---\n".join([
+                    f"Attempt {i+1} Failure:\n"
+                    f"- Failure Type: {f['failure_type']}\n"
+                    f"- Error Message: {f['error_message']}\n"
+                    f"- Code/SQL Executed: {f['code_context']}\n"
+                    f"- Mismatch details: {f['expected_vs_actual']}"
+                    for i, f in enumerate(semantic_failures)
+                ])
+                messages.append(HumanMessage(
+                    content=f"ATTENTION: Previous attempts failed validation due to semantic mismatch. Here is the compressed history of failures:\n{failures_context}\n\nPlease adapt your plan to correct these issues."
+                ))
 
-        # Marketplace demo: keep a usable SQL plan so code_generator can apply
-        # deterministic DuckDB fallbacks when the LLM key is missing/invalid.
-        if is_provider and dataset_id == MARKETPLACE_DATASET_ID:
-            logger.warning(
-                "Planner LLM unavailable for marketplace demo — continuing with SQL fallback plan."
+        try:
+            llm = get_llm(temperature=0.1)
+            response = llm.invoke(messages)
+
+            # Clean up code blocks if present
+            content = response.content.strip()
+            if content.startswith("```json"):
+                content = content[7:]
+            if content.endswith("```"):
+                content = content[:-3]
+            content = content.strip()
+
+            plan_data = json.loads(content, strict=False)
+            logger.info(
+                f"Generated plan. Approach: {plan_data.get('approach')}, "
+                f"Expected Output: {plan_data.get('expected_output_type')}"
             )
+
             updates = {
-                "plan": {
-                    "steps": [
-                        "Answer using marketplace DuckDB tables "
-                        "(categories, suppliers, buyers, products, leads, orders)."
-                    ],
-                    "approach": "sql",
-                    "expected_output_type": "dataframe",
-                },
-                "expected_output_type": "dataframe",
+                "plan": plan_data,
+                "expected_output_type": plan_data.get("expected_output_type"),
                 "generated_code": None,
                 "execution_success": False,
             }
-        elif is_provider:
-            logger.error("Provider chain exhausted. Skipping agent retry loop.")
-            updates = {
-                "plan": fallback_plan,
+        except Exception as e:
+            logger.error(f"Error in Planner Node: {e}")
+            status = "failed"
+            error_msg = str(e)
+            fallback_plan = {
+                "steps": ["Retrieve data using SELECT *"],
+                "approach": "sql",
                 "expected_output_type": "dataframe",
-                "generated_code": None,
-                "execution_success": False,
-                "failure_summary": {
-                    "failure_type": "provider_error",
-                    "error_message": provider_error_user_message(error_msg),
-                    "code_context": "",
-                    "expected_vs_actual": error_msg
+            }
+            from backend.utils.provider_errors import (
+                is_provider_auth_or_config_error,
+                provider_error_user_message,
+            )
+
+            error_str = error_msg.lower()
+            is_rate_limited = (
+                "429" in error_str
+                or "resource_exhausted" in error_str
+                or "rate limit" in error_str
+            )
+            is_provider = is_rate_limited or is_provider_auth_or_config_error(error_msg)
+
+            # Provider/auth failure → continue with SQL plan so code_generator
+            # can apply the deterministic analytics fallback for any dataset.
+            if is_provider:
+                logger.warning(
+                    "Planner LLM unavailable — continuing with deterministic SQL plan."
+                )
+                status = "success"
+                error_msg = None
+                plan_data = _demo_sql_plan()
+                updates = {
+                    "plan": plan_data,
+                    "expected_output_type": plan_data.get("expected_output_type"),
+                    "generated_code": None,
+                    "execution_success": False,
+                    "failure_summary": None,
                 }
-            }
-        else:
-            updates = {
-                "plan": fallback_plan,
-                "expected_output_type": "dataframe",
-                "generated_code": None,
-                "execution_success": False
-            }
+            else:
+                updates = {
+                    "plan": fallback_plan,
+                    "expected_output_type": "dataframe",
+                    "generated_code": None,
+                    "execution_success": False,
+                }
 
     # Record metrics
     end_time = time.time()

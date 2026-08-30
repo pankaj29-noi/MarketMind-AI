@@ -1,9 +1,10 @@
-import { Sparkles, ShieldCheck, AlertTriangle } from "lucide-react";
+import { Sparkles, ShieldCheck, AlertTriangle, FlaskConical } from "lucide-react";
 import type { AppReportPayload } from "./Report";
 
 export function ExecutiveSummaryCard({ payload }: { payload: AppReportPayload }) {
   const { executive_summary, report_type } = payload.report;
   const isFailure = report_type === "FAILURE";
+  const isDemoAnalysis = payload.debug?.analysis_source === "deterministic_fallback";
   return (
     <section className="glass-card relative overflow-hidden rounded-3xl p-6 sm:p-8">
       <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-primary/20 blur-3xl" />
@@ -26,6 +27,11 @@ export function ExecutiveSummaryCard({ payload }: { payload: AppReportPayload })
           >
             <ShieldCheck className="h-3 w-3" /> {executive_summary.confidence} confidence
           </span>
+          {!isFailure && isDemoAnalysis && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-sky-700 dark:text-sky-300">
+              <FlaskConical className="h-3 w-3" /> Demo Analysis Mode
+            </span>
+          )}
         </div>
 
         <h2 className="mt-5 text-2xl font-bold leading-tight tracking-tight sm:text-3xl">

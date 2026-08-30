@@ -52,6 +52,19 @@ def use_lead_demo_extraction() -> bool:
     return True
 
 
+def use_analytics_demo_fallback() -> bool:
+    """
+    Whether Marketplace Analytics should prefer the deterministic SQL fallback.
+
+    Real LLM path always wins when a valid GROQ_API_KEY is configured.
+    """
+    if has_valid_llm_api_key():
+        return False
+    if DEMO_MODE in ("0", "false", "no", "off"):
+        return False
+    return True
+
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError(

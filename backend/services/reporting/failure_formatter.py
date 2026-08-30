@@ -144,8 +144,9 @@ def generate_failure_report(state: AgentState) -> Dict[str, Any]:
                 {
                     "title": "What you can ask about",
                     "body": (
-                        "products, suppliers, buyers, leads, orders, and categories "
-                        "in the loaded marketplace demo."
+                        "Ask about totals, rankings, and breakdowns using columns in the "
+                        "currently loaded dataset (marketplace: products, suppliers, buyers, "
+                        "leads, orders, categories)."
                     ),
                 },
                 {

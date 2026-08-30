@@ -111,6 +111,11 @@ def validate_sql(query: str, schema: Dict[str, Any] = None, question: str = "") 
         else:
             for col in schema.get("columns", []):
                 valid_columns.add(col["name"].lower())
+            # Allow the active table / dataset id when quoted (FROM "uploaded_data_…")
+            for key in ("dataset_id", "table_name", "duckdb_table"):
+                name = schema.get(key)
+                if isinstance(name, str) and name:
+                    valid_columns.add(name.lower())
 
         quoted_cols = re.findall(r'"([^"]+)"', query)
         for col in quoted_cols:

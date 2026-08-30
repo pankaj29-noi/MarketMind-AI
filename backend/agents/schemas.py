@@ -138,6 +138,10 @@ class DebugInfo(BaseModel):
     execution_mode: Optional[str] = Field(None, description="SQL, PYTHON, or DETERMINISTIC")
     execution_plan: Optional[str] = Field(None, description="Planner steps as a readable string")
     llm_reasoning:  Optional[str] = Field(None, description="LLM explanation of its approach")
+    analysis_source: Optional[str] = Field(
+        None,
+        description="llm | deterministic_fallback — how SQL/analysis was produced",
+    )
 
 
 # ─────────────────────────────────────────────

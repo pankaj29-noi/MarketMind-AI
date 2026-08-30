@@ -34,4 +34,5 @@ export interface DebugInfo {
   execution_mode: 'SQL' | 'PYTHON' | 'DETERMINISTIC' | null;
   execution_plan: string | null;
   llm_reasoning: string | null;
+  analysis_source?: 'llm' | 'deterministic_fallback' | string | null;
 }
