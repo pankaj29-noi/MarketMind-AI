@@ -147,7 +147,7 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
             provider_error_user_message,
         )
         from backend.marketplace.demo_data import MARKETPLACE_DATASET_ID
-        from backend.marketplace.sql_fallback import resolve_marketplace_sql
+        from backend.marketplace.sql_fallback import resolve_marketplace_fallback
 
         error_str = error_msg.lower()
         is_rate_limited = (
@@ -163,14 +163,20 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
             and approach == "sql"
             and dataset_id == MARKETPLACE_DATASET_ID
         ):
-            fallback_sql = resolve_marketplace_sql(question)
-            if fallback_sql:
+            from backend.marketplace.sql_fallback import (
+                resolve_marketplace_fallback,
+                unsupported_user_message,
+            )
+            fallback = resolve_marketplace_fallback(question)
+            if fallback.sql:
                 logger.warning(
-                    "Using marketplace SQL fallback after LLM provider failure."
+                    "Using marketplace SQL fallback after LLM provider failure "
+                    "(source=%s).",
+                    fallback.analysis_source,
                 )
                 status = "success"
                 error_msg = None
-                generated_code = fallback_sql
+                generated_code = fallback.sql
                 end_time = time.time()
                 duration_ms = (end_time - start_time) * 1000
                 node_metadata = {
@@ -188,7 +194,43 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
                     "generated_code": generated_code,
                     "execution_metadata": execution_metadata,
                     "failure_summary": None,
+                    "analysis_artifacts": {
+                        "analysis_source": fallback.analysis_source,
+                    },
                 }
+
+            # No safe SQL template — graceful unsupported response (not System Failure)
+            logger.warning(
+                "Marketplace question not answerable via deterministic fallback "
+                "(reason=%s).",
+                fallback.reason,
+            )
+            end_time = time.time()
+            duration_ms = (end_time - start_time) * 1000
+            node_metadata = {
+                "node_name": node_name,
+                "start_time": start_time,
+                "end_time": end_time,
+                "duration_ms": duration_ms,
+                "status": "failed",
+                "retry_count": retry_count,
+                "error_message": fallback.reason,
+            }
+            execution_metadata = list(state.get("execution_metadata") or [])
+            execution_metadata.append(node_metadata)
+            return {
+                "generated_code": "",
+                "execution_metadata": execution_metadata,
+                "failure_summary": {
+                    "failure_type": "unsupported_question",
+                    "error_message": unsupported_user_message(fallback.reason),
+                    "code_context": "",
+                    "expected_vs_actual": fallback.reason,
+                },
+                "analysis_artifacts": {
+                    "analysis_source": "deterministic_fallback",
+                },
+            }
 
         if is_provider:
             logger.error("Provider chain exhausted. Skipping agent retry loop.")

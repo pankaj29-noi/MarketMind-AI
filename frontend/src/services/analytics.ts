@@ -1,7 +1,8 @@
 import type { MetricDay } from '../types/index';
+import { API_BASE } from '@/lib/api';
 
 export const fetchMetrics = async (): Promise<MetricDay[]> => {
-  const response = await fetch('http://localhost:8000/metrics');
+  const response = await fetch(`${API_BASE}/metrics`);
   if (!response.ok) {
     throw new Error('Failed to fetch metrics data.');
   }

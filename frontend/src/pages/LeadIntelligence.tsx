@@ -17,6 +17,7 @@ import { toast } from '@/lib/toast';
 import type { LeadAnalyzeResponse } from '@/types/lead';
 import { LEAD_EXAMPLE_REQUIREMENTS } from '@/types/lead';
 import { submitWorkflowFeedback } from '@/services/observability';
+import { API_BASE } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 interface LeadIntelligenceProps {
@@ -49,7 +50,7 @@ export const LeadIntelligence: React.FC<LeadIntelligenceProps> = ({
     setFeedbackComment('');
     setFeedbackSent(false);
     try {
-      const response = await fetch('http://localhost:8000/marketplace/lead/analyze', {
+      const response = await fetch(`${API_BASE}/marketplace/lead/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

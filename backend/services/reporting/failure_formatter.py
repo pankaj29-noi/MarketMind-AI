@@ -15,6 +15,11 @@ def map_error_to_resolution(failure_type: str) -> str:
         return "Reduce query complexity or dataset size."
     elif failure_type in ["visualization"]:
         return "Review the visualization requirements and ensure the data matches the requested chart type."
+    elif failure_type in ["unsupported_question", "unsupported"]:
+        return (
+            "Ask about products, suppliers, buyers, leads, orders, or categories "
+            "using the loaded marketplace demo tables."
+        )
     elif failure_type in ["provider_error", "provider"]:
         return "Set a valid GROQ_API_KEY in DataAgent-Pro/.env (and optionally GOOGLE_API_KEY), then restart the backend."
     else:
@@ -34,6 +39,10 @@ def map_error_to_summary(failure_type: str) -> str:
         return "The execution was aborted because it exceeded the allowed time limit."
     elif failure_type in ["visualization"]:
         return "The visualization could not be generated from the returned data."
+    elif failure_type in ["unsupported_question", "unsupported"]:
+        return (
+            "I couldn't answer this question using the currently loaded marketplace dataset."
+        )
     elif failure_type in ["provider_error", "provider"]:
         return "The LLM provider could not authenticate or complete the request. Marketplace demo data is loaded; analytics needs a valid API key."
     else:
@@ -90,10 +99,24 @@ def generate_failure_report(state: AgentState) -> Dict[str, Any]:
     # Generate deterministic fields
     summary = map_error_to_summary(failure_type)
     resolution = map_error_to_resolution(failure_type)
-    # Prefer actionable provider message already set by planner/code_generator
-    if failure_type.lower() in ["provider_error", "provider"] and error_message:
+    # Prefer actionable message already set by planner/code_generator
+    if (
+        failure_type.lower() in ["provider_error", "provider", "unsupported_question", "unsupported"]
+        and error_message
+    ):
         summary = error_message
     location = determine_failure_location(state)
+
+    ft = failure_type.lower()
+    if ft in ("unsupported_question", "unsupported"):
+        title = "Unable to Analyze This Question"
+        headline = "Unable to Analyze This Question"
+    elif ft in ("provider_error", "provider"):
+        title = "Analysis Unavailable"
+        headline = "Analysis Unavailable"
+    else:
+        title = "Analysis Failed"
+        headline = "Analysis Failed"
     
     # ── Dataset context ──────────────────────────────────────────────────────
     columns_list = schema_profile.get("columns", [])
@@ -108,10 +131,10 @@ def generate_failure_report(state: AgentState) -> Dict[str, Any]:
         "success": False,
         "dataset": dataset_info,
         "report": {
-            "title": "Execution Failed",
+            "title": title,
             "report_type": "FAILURE",
             "executive_summary": {
-                "headline": "System Failure Report",
+                "headline": headline,
                 "summary": summary,
                 "confidence": "Low"
             },
@@ -119,15 +142,18 @@ def generate_failure_report(state: AgentState) -> Dict[str, Any]:
             "charts": [],
             "insights": [
                 {
-                    "title": "Failure Location",
-                    "body": location
+                    "title": "What you can ask about",
+                    "body": (
+                        "products, suppliers, buyers, leads, orders, and categories "
+                        "in the loaded marketplace demo."
+                    ),
                 },
                 {
-                    "title": "Technical Details",
+                    "title": "Details",
                     "body": f"[{failure_type.upper()}] {error_message}"
                 },
                 {
-                    "title": "Possible Resolution",
+                    "title": "Suggestion",
                     "body": resolution
                 }
             ],
@@ -137,7 +163,8 @@ def generate_failure_report(state: AgentState) -> Dict[str, Any]:
             "generated_code": code or None,
             "execution_mode": state.get("plan", {}).get("approach", "DETERMINISTIC").upper(),
             "execution_plan": "\n".join(f"- {s}" for s in plan_steps) if plan_steps else None,
-            "llm_reasoning": "Deterministic failure report generated. LLM bypassed."
+            "llm_reasoning": "Deterministic failure report generated. LLM bypassed.",
+            "analysis_source": (state.get("analysis_artifacts") or {}).get("analysis_source"),
         },
         "pdf_path": None,
     }

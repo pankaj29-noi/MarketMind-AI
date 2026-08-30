@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Workspace } from './pages/Workspace';
 import { toast } from './lib/toast';
+import { API_BASE } from './lib/api';
 
 import type {
   UploadResponse,
@@ -50,7 +51,7 @@ export const App: React.FC = () => {
     formData.append('file', file);
 
     try {
-      const response = await fetch('http://localhost:8000/upload', {
+      const response = await fetch(`${API_BASE}/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -74,7 +75,7 @@ export const App: React.FC = () => {
     setIsLoadingDemo(true);
     setUploadError('');
     try {
-      const response = await fetch('http://localhost:8000/marketplace/demo', {
+      const response = await fetch(`${API_BASE}/marketplace/demo`, {
         method: 'POST',
       });
       if (!response.ok) {
@@ -99,7 +100,7 @@ export const App: React.FC = () => {
   // Poll LangGraph traces
   const pollTrace = async (sessionId: string): Promise<any[]> => {
     try {
-      const response = await fetch(`http://localhost:8000/execution/${sessionId}/trace`);
+      const response = await fetch(`${API_BASE}/execution/${sessionId}/trace`);
       if (response.ok) {
         const data = await response.json();
         setTraceHistory(data.trace || []);
@@ -114,7 +115,7 @@ export const App: React.FC = () => {
   // Fetch session history
   const fetchSessionHistory = async (sessionId: string) => {
     try {
-      const response = await fetch(`http://localhost:8000/history/${sessionId}`);
+      const response = await fetch(`${API_BASE}/history/${sessionId}`);
       if (response.ok) {
         const data = await response.json();
         setSessionQueries(data.history || []);
@@ -147,7 +148,7 @@ export const App: React.FC = () => {
     const pollInterval = setInterval(() => pollTrace(session.session_id), 1500);
 
     try {
-      const response = await fetch('http://localhost:8000/analyze', {
+      const response = await fetch(`${API_BASE}/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: session.session_id, question: userQuestion }),
@@ -178,16 +179,29 @@ export const App: React.FC = () => {
 
     } catch (err: any) {
       clearInterval(pollInterval);
+      const msg = String(err?.message || 'Unknown error');
+      const isNetwork =
+        msg.toLowerCase().includes('failed to fetch') ||
+        msg.toLowerCase().includes('networkerror') ||
+        msg.toLowerCase().includes('load failed');
       const errorReport: ReportSection = {
-        title: 'Analysis Error',
+        title: isNetwork ? 'Backend Unavailable' : 'Unable to Analyze This Question',
+        report_type: 'FAILURE',
         executive_summary: {
-          headline: 'An error occurred while running the analysis.',
-          summary: err.message || 'Unknown error. Please check the console and try again.',
+          headline: isNetwork ? 'Backend Unavailable' : 'Unable to Analyze This Question',
+          summary: isNetwork
+            ? 'Could not reach the MarketMind API. Confirm the backend is running and that VITE_API_BASE_URL matches its port.'
+            : `${msg}\n\nTry asking about products, suppliers, buyers, leads, orders, or categories in the marketplace demo.`,
           confidence: 'Low',
         },
         tables: [],
         charts: [],
-        insights: [],
+        insights: [
+          {
+            title: 'What you can ask about',
+            body: 'products • suppliers • buyers • leads • orders • categories',
+          },
+        ],
         recommendations: [],
       };
       setChatHistory(prev => [...prev, {
@@ -196,6 +210,7 @@ export const App: React.FC = () => {
         report: errorReport,
         success: false,
       }]);
+      toast(isNetwork ? 'Backend unavailable' : 'Analysis could not be completed', 'error');
     } finally {
       setIsAnalyzing(false);
     }

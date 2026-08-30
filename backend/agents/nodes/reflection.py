@@ -62,8 +62,11 @@ def reflection_node(state: AgentState) -> Dict[str, Any]:
 
         failure_type = failure_summary.get("failure_type")
         
-        if failure_type == "provider_error":
-            logger.warning("Provider chain exhausted due to rate limit. Skipping agent retry loop.")
+        if failure_type in ("provider_error", "unsupported_question"):
+            logger.warning(
+                "Non-retriable failure type '%s'. Skipping agent retry loop.",
+                failure_type,
+            )
             status = "failed"
             error_msg = failure_summary.get("error_message")
             routing_hint = "REPORT"

@@ -69,9 +69,15 @@ def validator_node(state: AgentState) -> Dict[str, Any]:
         # 1. RUNTIME & TIMEOUT FAILURE CLASSIFICATION
         if not execution_success:
             existing_failure = state.get("failure_summary")
-            if existing_failure and existing_failure.get("failure_type") == "provider_error":
+            if existing_failure and existing_failure.get("failure_type") in (
+                "provider_error",
+                "unsupported_question",
+            ):
                 failure_summary = existing_failure
-                logger.warning("Validator preserving provider_error classification.")
+                logger.warning(
+                    "Validator preserving %s classification.",
+                    existing_failure.get("failure_type"),
+                )
                 status = "failed"
             else:
                 error_msg = output_summary.get("error", "Unknown python execution error.")
@@ -163,9 +169,15 @@ def validator_node(state: AgentState) -> Dict[str, Any]:
         # 1. RUNTIME & TIMEOUT FAILURE CLASSIFICATION (SQL)
         if not execution_success:
             existing_failure = state.get("failure_summary")
-            if existing_failure and existing_failure.get("failure_type") == "provider_error":
+            if existing_failure and existing_failure.get("failure_type") in (
+                "provider_error",
+                "unsupported_question",
+            ):
                 failure_summary = existing_failure
-                logger.warning("Validator preserving provider_error classification.")
+                logger.warning(
+                    "Validator preserving %s classification.",
+                    existing_failure.get("failure_type"),
+                )
                 status = "failed"
             else:
                 error_msg = output_summary.get("error", "Unknown execution error.")

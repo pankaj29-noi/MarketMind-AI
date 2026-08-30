@@ -1,3 +1,5 @@
+import { API_BASE } from '@/lib/api';
+
 export interface WorkflowRun {
   run_id: string;
   session_id?: string | null;
@@ -26,14 +28,14 @@ export interface ObservabilitySummary {
 }
 
 export async function fetchObservabilityRuns(limit = 50): Promise<WorkflowRun[]> {
-  const res = await fetch(`http://localhost:8000/marketplace/observability/runs?limit=${limit}`);
+  const res = await fetch(`${API_BASE}/marketplace/observability/runs?limit=${limit}`);
   if (!res.ok) throw new Error('Failed to load workflow runs');
   const data = await res.json();
   return data.runs || [];
 }
 
 export async function fetchObservabilitySummary(): Promise<ObservabilitySummary> {
-  const res = await fetch('http://localhost:8000/marketplace/observability/summary');
+  const res = await fetch(`${API_BASE}/marketplace/observability/summary`);
   if (!res.ok) throw new Error('Failed to load observability summary');
   const data = await res.json();
   return data.summary;
@@ -44,7 +46,7 @@ export async function submitWorkflowFeedback(
   rating: 'helpful' | 'not_helpful',
   comment?: string
 ): Promise<void> {
-  const res = await fetch('http://localhost:8000/marketplace/feedback', {
+  const res = await fetch(`${API_BASE}/marketplace/feedback`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ run_id: runId, rating, comment: comment || undefined }),
