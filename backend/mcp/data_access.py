@@ -285,6 +285,31 @@ def get_column_stats(session_id: str, dataset_id: str, column: str) -> Dict[str,
             logger.error(f"Error generating column stats from Postgres: {e}")
             raise
 
+def _assert_read_only_sql(query: str) -> None:
+    """
+    Enforce a single read-only SELECT/WITH statement for DuckDB/Postgres query execution.
+    Raises PermissionError on violation.
+    """
+    stripped = (query or "").strip()
+    if not stripped:
+        raise PermissionError("Empty SQL query is not allowed.")
+    core = stripped.rstrip(";").strip()
+    if ";" in core:
+        raise PermissionError("Multi-statement SQL is not allowed.")
+    upper = core.upper()
+    if not (upper.startswith("SELECT") or upper.startswith("WITH")):
+        raise PermissionError("Only read-only SELECT (or WITH…SELECT) statements are allowed.")
+    forbidden = (
+        " INSERT ", " UPDATE ", " DELETE ", " DROP ", " ALTER ", " CREATE ", " TRUNCATE ",
+        " COPY ", " ATTACH ", " EXPORT ", " IMPORT ", " INSTALL ", " LOAD ", " PRAGMA ",
+        " CALL ", " EXECUTE ",
+    )
+    padded = f" {upper} "
+    for kw in forbidden:
+        if kw in padded:
+            raise PermissionError(f"Write/DDL/filesystem SQL is restricted ({kw.strip()}).")
+
+
 def run_query(session_id: str, dataset_id: str, query: str) -> Dict[str, Any]:
     """
     Executes a SQL query. If it is a CSV dataset, runs against session's DuckDB connection.
@@ -293,10 +318,7 @@ def run_query(session_id: str, dataset_id: str, query: str) -> Dict[str, Any]:
     if is_csv_session(session_id):
         try:
             logger.info(f"Running SQL query on CSV {dataset_id} in session {session_id} in DuckDB")
-            # Enforce that query has read-only structure (no mutations) - simple heuristic
-            query_lower = query.lower().strip()
-            if any(kw in query_lower for kw in ["insert ", "update ", "delete ", "drop ", "alter ", "create "]):
-                raise PermissionError("Write/DDL statements are restricted in query execution.")
+            _assert_read_only_sql(query)
 
             conn = session_manager.get_session_connection(session_id)
             cursor = conn.execute(query)
@@ -320,10 +342,7 @@ def run_query(session_id: str, dataset_id: str, query: str) -> Dict[str, Any]:
     else:
         try:
             logger.info(f"Running SQL query on Postgres table {dataset_id} in session {session_id}")
-            # Enforce read-only structure
-            query_lower = query.lower().strip()
-            if any(kw in query_lower for kw in ["insert ", "update ", "delete ", "drop ", "alter ", "create "]):
-                raise PermissionError("Write/DDL statements are restricted in query execution.")
+            _assert_read_only_sql(query)
 
             with get_db_connection() as conn:
                 with conn.cursor() as cur:

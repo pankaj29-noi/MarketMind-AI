@@ -49,10 +49,66 @@ def validate_sql(query: str, schema: Dict[str, Any] = None, question: str = "") 
     critical_issues = []
     warnings = []
     
+    stripped = query.strip()
+    if not stripped:
+        return {
+            "is_valid": False,
+            "diagnostics": "CRITICAL ISSUES:\n- Empty SQL query.",
+            "critical_issues": ["Empty SQL query."],
+            "warnings": [],
+        }
+
+    # Strip a single trailing semicolon for statement checks
+    core = stripped.rstrip(";").strip()
+    query_upper = core.upper()
+
+    # Reject multi-statement payloads (second statement after ;)
+    if ";" in core:
+        return {
+            "is_valid": False,
+            "diagnostics": "CRITICAL ISSUES:\n- Multi-statement SQL is not allowed.",
+            "critical_issues": ["Multi-statement SQL is not allowed."],
+            "warnings": [],
+        }
+
+    # Read-only gate: only SELECT / WITH…SELECT are valid analytical queries
+    if not (query_upper.startswith("SELECT") or query_upper.startswith("WITH")):
+        msg = "Only read-only SELECT (or WITH…SELECT) statements are allowed."
+        return {
+            "is_valid": False,
+            "diagnostics": f"CRITICAL ISSUES:\n- {msg}",
+            "critical_issues": [msg],
+            "warnings": [],
+        }
+
+    # Block obvious write / DuckDB filesystem primitives even inside SELECT wrappers
+    forbidden = (
+        "INSERT ", "UPDATE ", "DELETE ", "DROP ", "ALTER ", "CREATE ", "TRUNCATE ",
+        "COPY ", "ATTACH ", "EXPORT ", "IMPORT ", "INSTALL ", "LOAD ", "PRAGMA ",
+        "CALL ", "EXECUTE ",
+    )
+    padded = f" {query_upper} "
+    for kw in forbidden:
+        if f" {kw}" in padded or query_upper.startswith(kw.strip()):
+            # Allow PRAGMA table_info only if needed? Prefer deny-all for generated SQL.
+            if kw == "PRAGMA ":
+                msg = "PRAGMA statements are not allowed in generated analytical SQL."
+            else:
+                msg = f"Forbidden SQL keyword detected: {kw.strip()}"
+            critical_issues.append(msg)
+
+    if critical_issues:
+        diagnostics = "CRITICAL ISSUES:\n- " + "\n- ".join(critical_issues)
+        return {
+            "is_valid": False,
+            "diagnostics": diagnostics,
+            "critical_issues": critical_issues,
+            "warnings": [],
+        }
+
+    # Keep upper form for remaining quality checks (use original query for regex on mixed case)
+    # Re-bind query_upper to the full original upper for SELECT * / GROUP BY heuristics
     query_upper = query.upper()
-    
-    if not query_upper.strip().startswith("SELECT"):
-        return {"is_valid": True, "diagnostics": "", "critical_issues": [], "warnings": []}
 
     # 1. Misuse of SELECT *
     if re.search(r"SELECT\s+\*\s+FROM", query_upper) or re.search(r"SELECT\s+.*,\s*\*\s+FROM", query_upper):

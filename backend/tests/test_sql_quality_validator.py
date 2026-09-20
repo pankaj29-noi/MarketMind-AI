@@ -87,5 +87,31 @@ class TestSQLQualityValidator(unittest.TestCase):
         self.assertFalse(result["is_valid"])
         self.assertTrue(any("Misuse of SELECT *" in c for c in result["critical_issues"]))
 
+    def test_non_select_rejected(self):
+        for query in (
+            "DROP TABLE sales",
+            "DELETE FROM sales",
+            "INSERT INTO sales VALUES (1)",
+            "COPY sales TO '/tmp/out.csv'",
+            "ATTACH 'evil.db'",
+        ):
+            result = validate_sql(query)
+            self.assertFalse(result["is_valid"], query)
+            self.assertTrue(len(result["critical_issues"]) >= 1, query)
+
+    def test_multi_statement_rejected(self):
+        result = validate_sql("SELECT 1; DROP TABLE sales")
+        self.assertFalse(result["is_valid"])
+        self.assertTrue(any("Multi-statement" in c for c in result["critical_issues"]))
+
+    def test_with_select_allowed(self):
+        query = (
+            "WITH totals AS (SELECT category, SUM(amount) AS total FROM sales GROUP BY category) "
+            "SELECT category, total FROM totals ORDER BY total DESC LIMIT 5"
+        )
+        result = validate_sql(query, question="top 5 categories by sales")
+        self.assertTrue(result["is_valid"], result["diagnostics"])
+
+
 if __name__ == "__main__":
     unittest.main()
