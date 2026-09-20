@@ -38,7 +38,7 @@ class TestAnalyticsPerf(unittest.TestCase):
         )
         self.assertIn(
             classify_question_complexity("Show top 5 industries by average Data_value"),
-            ("COMPLEX", "VERY_COMPLEX"),
+            ("MEDIUM", "COMPLEX", "VERY_COMPLEX"),
         )
         self.assertEqual(
             classify_question_complexity(

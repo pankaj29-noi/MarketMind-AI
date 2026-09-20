@@ -869,6 +869,44 @@ async def analyze_data(
             except Exception as e:
                 logger.warning("Failed to cache analyze result: %s", e)
 
+        try:
+            from backend.services.analytics_telemetry import (
+                new_request_id,
+                record_analytics_event,
+            )
+            meta = final_state.get("execution_metadata") or []
+            by_node: dict = {}
+            for m in meta:
+                n = m.get("node_name")
+                if n:
+                    by_node[n] = by_node.get(n, 0.0) + float(m.get("duration_ms") or 0)
+            record_analytics_event(
+                {
+                    "request_id": new_request_id(),
+                    "session_id": session_id,
+                    "dataset_id": dataset_id,
+                    "question": question,
+                    "complexity": question_complexity,
+                    "model": model_name,
+                    "provider": provider_name,
+                    "schema_ms": by_node.get("schema_profiler"),
+                    "generation_ms": by_node.get("planner", 0)
+                    + by_node.get("code_generator", 0),
+                    "sql_exec_ms": by_node.get("sandbox_executor"),
+                    "validation_ms": by_node.get("validator"),
+                    "total_ms": round(execution_time_ms, 2),
+                    "retry_count": retry_count,
+                    "cache_hit": False,
+                    "success": success,
+                    "analysis_source": analysis_source,
+                    "abstention_reason": (None if success else failure_type),
+                }
+            )
+            debug_out["node_timings_ms"] = {k: round(v, 2) for k, v in by_node.items()}
+            response_body["debug"] = debug_out
+        except Exception as e:
+            logger.warning("analytics telemetry failed: %s", e)
+
         return response_body
 
     except Exception as e:

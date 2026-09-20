@@ -32,8 +32,12 @@ def rich_profile_to_schema_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
                 "min": col.get("min_value"),
                 "max": col.get("max_value"),
                 "mean": col.get("avg_value"),
+                "median": col.get("median_value"),
                 "top_values": col.get("top_values") or [],
                 "analytical_role": col.get("analytical_role") or "categorical",
+                "normalized_name": col.get("normalized_name") or "",
+                "semantic_type": col.get("semantic_type") or "unknown",
+                "semantic_confidence": col.get("semantic_confidence") or 0.0,
             }
         )
     return {
@@ -129,8 +133,26 @@ _SIMPLE_MARKERS = (
 )
 
 
+_MEDIUM_MARKERS = (
+    "by ",
+    "per ",
+    "group",
+    "month",
+    "quarter",
+    "year",
+    "percent",
+    "percentage",
+    "ratio",
+    "compare",
+    "versus",
+    " vs ",
+    "filter",
+    "where",
+)
+
+
 def classify_question_complexity(question: str) -> str:
-    """Return SIMPLE | COMPLEX | VERY_COMPLEX."""
+    """Return SIMPLE | MEDIUM | COMPLEX | VERY_COMPLEX."""
     q = (question or "").lower().strip()
     if not q:
         return "SIMPLE"
@@ -140,13 +162,23 @@ def classify_question_complexity(question: str) -> str:
     if very_hits >= 1:
         return "VERY_COMPLEX"
     complex_hits = sum(1 for m in _COMPLEX_MARKERS if m in q)
+    medium_hits = sum(1 for m in _MEDIUM_MARKERS if m in q)
+    # Multi-signal analytical asks
+    if complex_hits >= 3:
+        return "COMPLEX"
     if complex_hits >= 2:
         return "COMPLEX"
+    if complex_hits >= 1 and medium_hits >= 1:
+        return "MEDIUM"
     if complex_hits >= 1:
-        return "COMPLEX"
+        return "MEDIUM"
+    if medium_hits >= 2:
+        return "MEDIUM"
+    if any(m in q for m in _SIMPLE_MARKERS) and medium_hits == 0:
+        return "SIMPLE"
     if any(m in q for m in _SIMPLE_MARKERS):
         return "SIMPLE"
-    return "COMPLEX"
+    return "MEDIUM"
 
 
 # ---------------------------------------------------------------------------

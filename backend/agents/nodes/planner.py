@@ -101,6 +101,16 @@ def planner_node(state: AgentState) -> Dict[str, Any]:
     requirement_contract = format_semantic_requirement_contract(
         req, schema_columns=schema_cols
     )
+
+    from backend.services.question_ir import build_question_ir, format_ir_for_llm
+    from backend.services.analytics_perf import classify_question_complexity
+
+    ir = build_question_ir(question, schema_profile or {})
+    complexity = ir.complexity or classify_question_complexity(question)
+    ir_block = format_ir_for_llm(ir)
+    if ir_block:
+        requirement_contract = (requirement_contract or "") + "\n\n" + ir_block
+
     schema_context = format_schema_context_for_llm(
         schema_profile or {}, fallback_table=table_name
     )
@@ -116,6 +126,8 @@ def planner_node(state: AgentState) -> Dict[str, Any]:
         artifacts = dict(base or state.get("analysis_artifacts") or {})
         artifacts["question_requirements"] = req.to_dict()
         artifacts["requirement_contract"] = requirement_contract
+        artifacts["question_ir"] = ir.to_dict()
+        artifacts["question_complexity"] = complexity
         if precheck_ok is not None:
             artifacts["planning_precheck_ok"] = precheck_ok
         if precheck_missing is not None:
@@ -208,8 +220,29 @@ def planner_node(state: AgentState) -> Dict[str, Any]:
             },
         )
 
+    # FAST PATH: SIMPLE questions get a deterministic plan (0 planner LLM).
+    if complexity == "SIMPLE" and retry_count == 0 and not use_analytics_demo_fallback():
+        logger.info("Planner fast-path: deterministic plan for SIMPLE question.")
+        plan_data = _demo_sql_plan()
+        plan_data["planning_source"] = "simple_fast_path"
+        plan_data, ok_pc, miss_pc, failure = _ensure_plan_semantically_complete(
+            plan_data, allow_repair=True
+        )
+        updates = {
+            "plan": plan_data,
+            "expected_output_type": plan_data.get("expected_output_type"),
+            "generated_code": None,
+            "execution_success": False,
+            "failure_summary": failure,
+            "analysis_artifacts": _attach_artifacts(
+                precheck_ok=ok_pc,
+                precheck_missing=miss_pc,
+                provider="Deterministic Fast Path",
+                model="requirement-aware-plan",
+            ),
+        }
     # DEMO MODE: skip planner LLM so analytics can run without a valid API key.
-    if use_analytics_demo_fallback():
+    elif use_analytics_demo_fallback():
         logger.warning(
             "Analytics DEMO MODE — using deterministic SQL plan (skipping planner LLM)."
         )

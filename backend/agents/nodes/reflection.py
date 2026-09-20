@@ -33,13 +33,13 @@ def reflection_node(state: AgentState) -> Dict[str, Any]:
             logger.info("Validation passed. Hinting REPORT.")
             routing_hint = "REPORT"
 
-    # Hard cap of 3 retries reached
-    elif retry_count >= 3:
-        logger.warning("Hard retry limit of 3 reached. Graceful degradation to REPORT.")
+    # Hard cap: one targeted repair then graceful REPORT (correctness mandate).
+    elif retry_count >= 1:
+        logger.warning("Repair limit of 1 reached. Graceful degradation to REPORT.")
         if failure_summary:
             retry_history.append(failure_summary)
         status = "failed"
-        error_msg = "Hard retry limit of 3 reached."
+        error_msg = "Repair limit of 1 reached."
         routing_hint = "REPORT"
         updates = {
             "graceful_failure": True,

@@ -144,6 +144,17 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
         req, schema_columns=schema_cols
     )
 
+    # Structured IR for prompts + artifacts
+    from backend.services.question_ir import build_question_ir, format_ir_for_llm
+    from backend.services.analytics_perf import classify_question_complexity
+    from backend.services.sql.sql_pattern_library import try_simple_deterministic_sql
+
+    ir = build_question_ir(question, schema_profile or {})
+    complexity = ir.complexity or classify_question_complexity(question)
+    ir_block = format_ir_for_llm(ir)
+    if ir_block:
+        requirement_contract = requirement_contract + "\n\n" + ir_block
+
     def _finish(
         code: str,
         *,
@@ -172,6 +183,8 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
         artifacts["analysis_source"] = source
         artifacts["question_requirements"] = req.to_dict()
         artifacts["requirement_contract"] = requirement_contract
+        artifacts["question_ir"] = ir.to_dict()
+        artifacts["question_complexity"] = complexity
         if precheck_ok is not None:
             artifacts["generation_precheck_ok"] = precheck_ok
         if precheck_missing is not None:
@@ -192,6 +205,40 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
         }
 
     schema_context = format_schema_context_for_llm(schema_profile or {}, fallback_table=table_name)
+
+    # FAST PATH: schema-adaptive pattern SQL for SIMPLE questions (0 LLM).
+    if approach == "sql" and complexity == "SIMPLE" and retry_count == 0:
+        cols = (schema_profile or {}).get("columns") or []
+        if isinstance(cols, list) and cols:
+            hit = try_simple_deterministic_sql(question, table_name, cols)
+            if hit and hit.sql:
+                ok_pat, miss_pat = check_requirement_coverage(question, hit.sql, columns=None)
+                if ok_pat or not miss_pat:
+                    logger.info(
+                        "Fast-path pattern SQL (%s, conf=%.2f) for SIMPLE question.",
+                        hit.pattern_id,
+                        hit.confidence,
+                    )
+                    return _finish(
+                        hit.sql,
+                        source=ANALYSIS_SOURCE_FALLBACK,
+                        precheck_ok=ok_pat,
+                        precheck_missing=miss_pat,
+                    )
+
+    # Outside DEMO MODE: still try deterministic marketplace/CSV templates for SIMPLE.
+    if approach == "sql" and complexity == "SIMPLE" and retry_count == 0 and not use_analytics_demo_fallback():
+        fallback = resolve_analytics_fallback(question, schema_profile or {}, dataset_id)
+        if fallback.sql:
+            ok_fb, miss_fb = check_requirement_coverage(question, fallback.sql, columns=None)
+            if ok_fb:
+                logger.info("Fast-path deterministic fallback SQL for SIMPLE question.")
+                return _finish(
+                    fallback.sql,
+                    source=ANALYSIS_SOURCE_FALLBACK,
+                    precheck_ok=ok_fb,
+                    precheck_missing=miss_fb,
+                )
 
     # DEMO MODE: try deterministic schema-aware SQL before calling the LLM.
     if approach == "sql" and use_analytics_demo_fallback():
