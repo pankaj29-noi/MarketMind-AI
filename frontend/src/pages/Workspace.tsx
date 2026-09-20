@@ -15,6 +15,8 @@ import { Analytics } from './Analytics';
 import { LeadIntelligence } from './LeadIntelligence';
 import { AgentMonitoring } from './AgentMonitoring';
 import { MARKETPLACE_SAMPLE_QUESTIONS } from '@/lib/marketplace';
+import { SuggestedQuestionsPanel } from '@/components/analysis/SuggestedQuestionsPanel';
+import type { SuggestedQuestion } from '@/services/suggestedQuestions';
 import type { ChatMessage } from '@/types/index';
 
 interface WorkspaceProps {
@@ -46,6 +48,12 @@ interface WorkspaceProps {
   isAnalyzing: boolean;
   setQuestion: (q: string) => void;
   handleAnalyze: (e: React.FormEvent, q?: string) => void;
+  suggestedQuestions?: SuggestedQuestion[];
+  suggestedLoading?: boolean;
+  suggestedError?: string | null;
+  suggestedMessage?: string | null;
+  useAdaptiveSuggestions?: boolean;
+  onRefreshSuggestions?: () => void;
   activeTab: 'analysis' | 'metrics';
   setActiveTab: (tab: 'analysis' | 'metrics') => void;
   isDark: boolean;
@@ -60,6 +68,12 @@ export const Workspace: React.FC<WorkspaceProps> = ({
   isRightSidebarCollapsed, onToggleRightSidebar,
   sidebarTrace, sessionQueries, latestAssistantMsg,
   chatHistory, question, isAnalyzing, setQuestion, handleAnalyze,
+  suggestedQuestions = [],
+  suggestedLoading = false,
+  suggestedError = null,
+  suggestedMessage = null,
+  useAdaptiveSuggestions = false,
+  onRefreshSuggestions,
   activeTab, setActiveTab,
   isDark: _isDark,
   onThemeToggle: _onThemeToggle,
@@ -252,6 +266,17 @@ export const Workspace: React.FC<WorkspaceProps> = ({
                     ) : (
                       <div className="mx-auto w-full max-w-4xl px-4 pt-6 pb-48">
                         {chatHistory.length === 0 && !isAnalyzing && (
+                          useAdaptiveSuggestions ? (
+                            <SuggestedQuestionsPanel
+                              questions={suggestedQuestions}
+                              loading={suggestedLoading}
+                              error={suggestedError}
+                              message={suggestedMessage}
+                              disabled={isAnalyzing}
+                              onAsk={handleSubmitQuestion}
+                              onRefresh={onRefreshSuggestions}
+                            />
+                          ) : (
                           <div className="mm-empty-ready relative mx-auto max-w-2xl overflow-hidden px-6 py-10 text-center">
                             <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/35 to-transparent" aria-hidden />
                             <div className="type-section-label text-primary">Intelligence system ready</div>
@@ -281,6 +306,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
                               ))}
                             </div>
                           </div>
+                          )
                         )}
 
                         <div className="space-y-10">

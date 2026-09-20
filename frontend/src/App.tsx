@@ -3,6 +3,10 @@ import { Workspace } from './pages/Workspace';
 import { toast } from './lib/toast';
 import { API_BASE } from './lib/api';
 import { IntelligenceBackground } from './components/layout/IntelligenceBackground';
+import {
+  fetchSuggestedQuestions,
+  type SuggestedQuestion,
+} from './services/suggestedQuestions';
 
 import type {
   UploadResponse,
@@ -24,6 +28,13 @@ export const App: React.FC = () => {
   const [isLoadingDemo, setIsLoadingDemo] = useState(false);
   const [uploadError, setUploadError] = useState('');
 
+  // Adaptive suggested questions (CSV uploads only)
+  const [suggestedQuestions, setSuggestedQuestions] = useState<SuggestedQuestion[]>([]);
+  const [suggestedLoading, setSuggestedLoading] = useState(false);
+  const [suggestedError, setSuggestedError] = useState<string | null>(null);
+  const [suggestedMessage, setSuggestedMessage] = useState<string | null>(null);
+  const [useAdaptiveSuggestions, setUseAdaptiveSuggestions] = useState(false);
+
   // Analysis State
   const [question, setQuestion] = useState('');
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
@@ -36,11 +47,54 @@ export const App: React.FC = () => {
   // Hidden file input ref
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const applySession = (data: UploadResponse) => {
+  const clearSuggestions = () => {
+    setSuggestedQuestions([]);
+    setSuggestedError(null);
+    setSuggestedMessage(null);
+    setSuggestedLoading(false);
+    setUseAdaptiveSuggestions(false);
+  };
+
+  const loadSuggestions = async (
+    data: UploadResponse,
+    opts?: { refresh?: boolean; excludeIds?: string[] }
+  ) => {
+    if (!data.session_id || !data.dataset_id) return;
+    // Marketplace multi-table demo keeps curated samples
+    if ((data.tables?.length || 0) > 1 || data.dataset_id === 'marketplace') {
+      clearSuggestions();
+      return;
+    }
+    setUseAdaptiveSuggestions(true);
+    setSuggestedLoading(true);
+    setSuggestedError(null);
+    try {
+      const res = await fetchSuggestedQuestions({
+        sessionId: data.session_id,
+        datasetId: data.dataset_id,
+        count: 10,
+        refresh: opts?.refresh,
+        excludeIds: opts?.excludeIds,
+      });
+      setSuggestedQuestions(res.questions || []);
+      setSuggestedMessage(res.message || null);
+    } catch (err: any) {
+      setSuggestedQuestions([]);
+      setSuggestedError(err.message || 'Could not generate suggestions.');
+    } finally {
+      setSuggestedLoading(false);
+    }
+  };
+
+  const applySession = (data: UploadResponse, opts?: { adaptive?: boolean }) => {
     setSession(data);
     setChatHistory([]);
     setTraceHistory([]);
     setSessionQueries([]);
+    clearSuggestions();
+    if (opts?.adaptive !== false) {
+      void loadSuggestions(data);
+    }
   };
 
   // CSV Drag and drop helper
@@ -62,7 +116,7 @@ export const App: React.FC = () => {
       }
 
       const data: UploadResponse = await response.json();
-      applySession(data);
+      applySession(data, { adaptive: true });
       toast(`Dataset loaded — ${data.row_count?.toLocaleString() ?? 0} rows`, 'success');
     } catch (err: any) {
       setUploadError(err.message || 'Error uploading file.');
@@ -84,7 +138,8 @@ export const App: React.FC = () => {
         throw new Error(detail.detail || 'Failed to load marketplace demo.');
       }
       const data: UploadResponse = await response.json();
-      applySession(data);
+      applySession(data, { adaptive: false });
+      clearSuggestions();
       const tableCount = data.tables?.length ?? 0;
       toast(
         `Marketplace demo loaded — ${tableCount} tables · ${data.row_count?.toLocaleString() ?? 0} rows`,
@@ -343,6 +398,18 @@ export const App: React.FC = () => {
         isAnalyzing={isAnalyzing}
         setQuestion={setQuestion}
         handleAnalyze={handleAnalyze}
+        suggestedQuestions={suggestedQuestions}
+        suggestedLoading={suggestedLoading}
+        suggestedError={suggestedError}
+        suggestedMessage={suggestedMessage}
+        useAdaptiveSuggestions={useAdaptiveSuggestions}
+        onRefreshSuggestions={() => {
+          if (!session) return;
+          void loadSuggestions(session, {
+            refresh: true,
+            excludeIds: suggestedQuestions.map((q) => q.id),
+          });
+        }}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         isDark={isDark}
