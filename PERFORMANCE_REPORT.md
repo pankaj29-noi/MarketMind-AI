@@ -142,13 +142,19 @@ Honest gap: full 50-question NL→SQL→report Groq scoring not re-run in this p
 
 ## 11. Deployment verification
 
-Pending push. Will verify:
+**Pushed:** `9574b59` → `origin/main` (https://github.com/pankaj29-noi/MarketMind-AI)
 
-- `GET https://marketmind-ai-93u1.onrender.com/health`
-- OpenAPI includes `/marketplace/lead/analyze` and `/session/{id}/suggested-questions`
-- Frontend https://marketmind-ai-pankaj.vercel.app
+| Probe | Result |
+|---|---|
+| `GET https://marketmind-ai-93u1.onrender.com/health` | **200** `{"status":"ok","agent_ready":true}` |
+| `POST /marketplace/lead/analyze` | **200** (Lead route live) |
+| `POST /session/{id}/suggested-questions` | **404** — not on live OpenAPI |
+| Live OpenAPI path count | **12** |
+| Local OpenAPI path count (`main` HEAD) | **17** (includes suggested-questions) |
+| Frontend `https://marketmind-ai-pankaj.vercel.app` | **200** |
 
-Do not claim live deploy success until probes return evidence.
+**Conclusion:** Render is **partially** synced (Lead is live; adaptive suggested-questions + latest analyze-cache commit are **not** confirmed on the running service). Manual Render redeploy from latest `main` is required for full parity. Do not claim full auto-deploy success.
+
 
 ---
 
