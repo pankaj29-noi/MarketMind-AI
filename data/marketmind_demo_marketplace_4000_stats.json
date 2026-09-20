@@ -1,0 +1,57 @@
+{
+  "path": "/Users/pankajbishnoi/Desktop/mottta/DataAgent-Pro/data/marketmind_demo_marketplace_4000.csv",
+  "rows": 4000,
+  "columns": [
+    "order_id",
+    "order_date",
+    "customer_id",
+    "customer_name",
+    "customer_region",
+    "customer_city",
+    "supplier_id",
+    "supplier_name",
+    "supplier_region",
+    "product_id",
+    "product_name",
+    "product_category",
+    "product_subcategory",
+    "quantity",
+    "unit_price",
+    "discount_percent",
+    "revenue",
+    "cost",
+    "profit",
+    "order_status",
+    "payment_method",
+    "sales_channel",
+    "delivery_days",
+    "rating"
+  ],
+  "date_min": "2023-01-01",
+  "date_max": "2025-12-31",
+  "unique_customers": 300,
+  "unique_suppliers": 60,
+  "unique_products": 80,
+  "regions": [
+    "Central",
+    "East",
+    "North",
+    "South",
+    "West"
+  ],
+  "categories": [
+    "Electronics",
+    "Industrial Equipment",
+    "Logistics Services",
+    "Packaging",
+    "Raw Materials"
+  ],
+  "order_statuses": {
+    "cancelled": 544,
+    "completed": 2906,
+    "pending": 550
+  },
+  "total_revenue_completed": 37217775.71000003,
+  "total_profit_completed": 10200771.770000024,
+  "avg_delivery_days_completed": 6.5588437715072265
+}
