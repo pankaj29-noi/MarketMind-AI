@@ -14,6 +14,8 @@ from charset_normalizer import detect
 from backend.config import (
     DATABASE_URL,
     CORS_ALLOWED_ORIGINS,
+    MAX_UPLOAD_BYTES,
+    MAX_UPLOAD_ROWS,
     log_provider_startup_diagnostics,
     get_uploads_root,
     get_scratch_root,
@@ -231,8 +233,13 @@ async def upload_csv(file: UploadFile = File(...)):
     registers it in-memory in Session Manager, creates PostgreSQL session record,
     and returns schema mapping.
     """
-    if not file.filename.endswith('.csv'):
+    filename = (file.filename or "").strip()
+    if not filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are accepted.")
+    # Prevent path traversal via crafted filenames
+    safe_name = os.path.basename(filename)
+    if not safe_name or safe_name != filename.replace("\\", "/").split("/")[-1]:
+        safe_name = "upload.csv"
     
     session_id = str(uuid.uuid4())
     dataset_id = f"uploaded_data_{uuid.uuid4().hex[:8]}"
@@ -244,8 +251,13 @@ async def upload_csv(file: UploadFile = File(...)):
     
     upload_success = False
     try:
-        # Read the file contents
-        content_bytes = await file.read()
+        # Read the file contents with a hard size cap
+        content_bytes = await file.read(MAX_UPLOAD_BYTES + 1)
+        if len(content_bytes) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"CSV exceeds maximum upload size of {MAX_UPLOAD_BYTES} bytes.",
+            )
         
         # Normalize encoding to UTF-8
         try:
@@ -263,7 +275,7 @@ async def upload_csv(file: UploadFile = File(...)):
         session_manager.register_csv(session_id, temp_file_path, dataset_id)
         
         # Insert session record into Postgres
-        create_session(session_id=session_id, dataset_id=dataset_id, dataset_name=file.filename)
+        create_session(session_id=session_id, dataset_id=dataset_id, dataset_name=safe_name)
         
         # Retrieve column info/schema
         schema = session_manager.execute_query(
@@ -274,6 +286,12 @@ async def upload_csv(file: UploadFile = File(...)):
         
         row_count_res = session_manager.execute_query(session_id, f"SELECT COUNT(*) as cnt FROM {dataset_id};")
         row_count = row_count_res[0]["cnt"] if row_count_res else 0
+        if row_count > MAX_UPLOAD_ROWS:
+            session_manager.evict_session(session_id)
+            raise HTTPException(
+                status_code=413,
+                detail=f"CSV exceeds maximum of {MAX_UPLOAD_ROWS} rows.",
+            )
         
         upload_success = True
         return {
@@ -283,6 +301,8 @@ async def upload_csv(file: UploadFile = File(...)):
             "columns": columns
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Upload processing failed: {e}")
         # Clean up temp file on failure
@@ -291,7 +311,10 @@ async def upload_csv(file: UploadFile = File(...)):
                 os.remove(temp_file_path)
             except Exception:
                 pass
-        raise HTTPException(status_code=500, detail=f"Failed to process CSV: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to process CSV. Check the file encoding and format, then retry.",
+        )
     finally:
         # Only clean up on failure
         if not upload_success and os.path.exists(temp_file_path):

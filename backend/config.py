@@ -188,6 +188,10 @@ if not DATABASE_URL:
 SANDBOX_TIMEOUT_SECONDS = int(os.getenv("SANDBOX_TIMEOUT_SECONDS", "10"))
 SANDBOX_MEMORY_LIMIT_MB = int(os.getenv("SANDBOX_MEMORY_LIMIT_MB", "256"))
 
+# CSV upload caps (protect free-tier memory)
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(15 * 1024 * 1024)))  # 15 MiB
+MAX_UPLOAD_ROWS = int(os.getenv("MAX_UPLOAD_ROWS", "100000"))
+
 # CORS — explicit origins only (never use "*" with allow_credentials=True).
 # Override / extend via comma-separated CORS_ALLOWED_ORIGINS.
 _DEFAULT_CORS_ORIGINS = (
