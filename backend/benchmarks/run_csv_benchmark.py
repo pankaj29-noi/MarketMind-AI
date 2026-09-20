@@ -145,7 +145,7 @@ def main() -> int:
 
 **Date:** {time.strftime('%Y-%m-%d %H:%M:%S')}  
 **Rows:** {args.rows}  
-**Questions:** {n} (10 easy / 10 medium / 15 hard / 15 very_hard)  
+**Questions:** {n} (20 easy / 25 medium / 30 hard / 25 very_hard)  
 **Session:** `{sid}` table `{did}`  
 
 ## Pipeline micro timings
@@ -180,7 +180,7 @@ def main() -> int:
     report += """
 ## Notes
 
-- This report measures **DuckDB SQL correctness + latency** for the 50-question suite.
+- This report measures **DuckDB SQL correctness + latency** for the 100-question suite.
 - Expected answers are produced by the listed `expected_sql` (deterministic), not by an LLM.
 - End-to-end NL→SQL LLM accuracy / LLM-calls-per-question are tracked separately when running the agent pipeline.
 - Cache hit rate for NL answers: N/A in this SQL-only harness (schema cache cold/cached shown above).

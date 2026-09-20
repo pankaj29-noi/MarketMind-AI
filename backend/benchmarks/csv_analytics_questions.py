@@ -764,11 +764,770 @@ BENCHMARK_QUESTIONS: List[Dict[str, Any]] = [
             LIMIT 10
         ''',
     },
+    # --- +10 easy (E11–E20) ---
+    {
+        "id": "E11",
+        "difficulty": "easy",
+        "question": "What is the median Data_value?",
+        "expected_sql": f'SELECT MEDIAN("Data_value") AS median_data_value FROM {TABLE}',
+    },
+    {
+        "id": "E12",
+        "difficulty": "easy",
+        "question": "How many distinct Series_title_1 values are there?",
+        "expected_sql": f'SELECT COUNT(DISTINCT "Series_title_1") AS n FROM {TABLE}',
+    },
+    {
+        "id": "E13",
+        "difficulty": "easy",
+        "question": "List distinct UNITS values.",
+        "expected_sql": f'SELECT DISTINCT "UNITS" AS units FROM {TABLE} ORDER BY 1',
+    },
+    {
+        "id": "E14",
+        "difficulty": "easy",
+        "question": "Count rows where Data_value is not null.",
+        "expected_sql": f'SELECT COUNT(*) AS n FROM {TABLE} WHERE "Data_value" IS NOT NULL',
+    },
+    {
+        "id": "E15",
+        "difficulty": "easy",
+        "question": "What is the sum of Magnitude?",
+        "expected_sql": f'SELECT SUM("Magnitude") AS total_magnitude FROM {TABLE}',
+    },
+    {
+        "id": "E16",
+        "difficulty": "easy",
+        "question": "How many distinct Series_reference values?",
+        "expected_sql": f'SELECT COUNT(DISTINCT "Series_reference") AS n FROM {TABLE}',
+    },
+    {
+        "id": "E17",
+        "difficulty": "easy",
+        "question": "Minimum Data_value in the dataset.",
+        "expected_sql": f'SELECT MIN("Data_value") AS min_data_value FROM {TABLE}',
+    },
+    {
+        "id": "E18",
+        "difficulty": "easy",
+        "question": "Count rows where STATUS is F.",
+        "expected_sql": f'''SELECT COUNT(*) AS n FROM {TABLE} WHERE "STATUS" = 'F' ''',
+    },
+    {
+        "id": "E19",
+        "difficulty": "easy",
+        "question": "Average Magnitude across all rows.",
+        "expected_sql": f'SELECT AVG("Magnitude") AS avg_magnitude FROM {TABLE}',
+    },
+    {
+        "id": "E20",
+        "difficulty": "easy",
+        "question": "How many distinct Group values?",
+        "expected_sql": f'SELECT COUNT(DISTINCT "Group") AS n FROM {TABLE}',
+    },
+    # --- +15 medium (M11–M25) ---
+    {
+        "id": "M11",
+        "difficulty": "medium",
+        "question": "Top 10 Series_title_2 by average Data_value.",
+        "expected_sql": f'''
+            SELECT "Series_title_2" AS industry, AVG("Data_value") AS avg_val
+            FROM {TABLE}
+            WHERE "Data_value" IS NOT NULL
+            GROUP BY 1
+            ORDER BY avg_val DESC
+            LIMIT 10
+        ''',
+    },
+    {
+        "id": "M12",
+        "difficulty": "medium",
+        "question": "Row counts by Series_title_3.",
+        "expected_sql": f'''
+            SELECT "Series_title_3" AS t3, COUNT(*) AS n
+            FROM {TABLE}
+            GROUP BY 1
+            ORDER BY n DESC
+        ''',
+    },
+    {
+        "id": "M13",
+        "difficulty": "medium",
+        "question": "Sum Data_value by STATUS.",
+        "expected_sql": f'''
+            SELECT "STATUS", SUM("Data_value") AS total
+            FROM {TABLE}
+            GROUP BY 1
+            ORDER BY total DESC
+        ''',
+    },
+    {
+        "id": "M14",
+        "difficulty": "medium",
+        "question": "Top 5 Series_title_1 by sum of Data_value.",
+        "expected_sql": f'''
+            SELECT "Series_title_1" AS title, SUM("Data_value") AS total
+            FROM {TABLE}
+            GROUP BY 1
+            ORDER BY total DESC
+            LIMIT 5
+        ''',
+    },
+    {
+        "id": "M15",
+        "difficulty": "medium",
+        "question": "Average Data_value for Period >= 2020.",
+        "expected_sql": f'SELECT AVG("Data_value") AS avg_val FROM {TABLE} WHERE "Period" >= 2020',
+    },
+    {
+        "id": "M16",
+        "difficulty": "medium",
+        "question": "Count distinct Series_title_2 per STATUS.",
+        "expected_sql": f'''
+            SELECT "STATUS", COUNT(DISTINCT "Series_title_2") AS n_industries
+            FROM {TABLE}
+            GROUP BY 1
+            ORDER BY 1
+        ''',
+    },
+    {
+        "id": "M17",
+        "difficulty": "medium",
+        "question": "Bottom 5 Series_title_2 by sum of Data_value (non-null).",
+        "expected_sql": f'''
+            SELECT "Series_title_2" AS industry, SUM("Data_value") AS total
+            FROM {TABLE}
+            WHERE "Data_value" IS NOT NULL
+            GROUP BY 1
+            ORDER BY total ASC
+            LIMIT 5
+        ''',
+    },
+    {
+        "id": "M18",
+        "difficulty": "medium",
+        "question": "Total Data_value by Series_title_4.",
+        "expected_sql": f'''
+            SELECT "Series_title_4" AS t4, SUM("Data_value") AS total
+            FROM {TABLE}
+            GROUP BY 1
+            ORDER BY total DESC
+        ''',
+    },
+    {
+        "id": "M19",
+        "difficulty": "medium",
+        "question": "How many rows per Magnitude value?",
+        "expected_sql": f'''
+            SELECT "Magnitude", COUNT(*) AS n
+            FROM {TABLE}
+            GROUP BY 1
+            ORDER BY "Magnitude"
+        ''',
+    },
+    {
+        "id": "M20",
+        "difficulty": "medium",
+        "question": "Max Data_value by Series_title_1.",
+        "expected_sql": f'''
+            SELECT "Series_title_1" AS title, MAX("Data_value") AS max_val
+            FROM {TABLE}
+            GROUP BY 1
+            ORDER BY max_val DESC
+        ''',
+    },
+    {
+        "id": "M21",
+        "difficulty": "medium",
+        "question": "Share of rows by UNITS as percentage.",
+        "expected_sql": f'''
+            SELECT "UNITS",
+                   COUNT(*) AS n,
+                   ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 2) AS pct
+            FROM {TABLE}
+            GROUP BY 1
+            ORDER BY n DESC
+        ''',
+    },
+    {
+        "id": "M22",
+        "difficulty": "medium",
+        "question": "Top 3 STATUS values by row count.",
+        "expected_sql": f'''
+            SELECT "STATUS", COUNT(*) AS n
+            FROM {TABLE}
+            GROUP BY 1
+            ORDER BY n DESC
+            LIMIT 3
+        ''',
+    },
+    {
+        "id": "M23",
+        "difficulty": "medium",
+        "question": "Sum Data_value where Series_title_3 = Current.",
+        "expected_sql": f'''
+            SELECT SUM("Data_value") AS total
+            FROM {TABLE}
+            WHERE "Series_title_3" = 'Current'
+        ''',
+    },
+    {
+        "id": "M24",
+        "difficulty": "medium",
+        "question": "Average Period by Series_title_2, top 5.",
+        "expected_sql": f'''
+            SELECT "Series_title_2" AS industry, AVG("Period") AS avg_period
+            FROM {TABLE}
+            GROUP BY 1
+            ORDER BY avg_period DESC
+            LIMIT 5
+        ''',
+    },
+    {
+        "id": "M25",
+        "difficulty": "medium",
+        "question": "Distinct Period count by STATUS.",
+        "expected_sql": f'''
+            SELECT "STATUS", COUNT(DISTINCT "Period") AS n_periods
+            FROM {TABLE}
+            GROUP BY 1
+            ORDER BY 1
+        ''',
+    },
+    # --- +15 hard (H16–H30) ---
+    {
+        "id": "H16",
+        "difficulty": "hard",
+        "question": "Industries with total Data_value above the overall median industry total.",
+        "expected_sql": f'''
+            WITH agg AS (
+              SELECT "Series_title_2" AS industry, SUM("Data_value") AS total
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+              GROUP BY 1
+            ),
+            med AS (SELECT MEDIAN(total) AS m FROM agg)
+            SELECT a.industry, a.total, med.m AS median_total
+            FROM agg a CROSS JOIN med
+            WHERE a.total > med.m
+            ORDER BY a.total DESC
+        ''',
+    },
+    {
+        "id": "H17",
+        "difficulty": "hard",
+        "question": "YoY percent change in total Data_value by year.",
+        "expected_sql": f'''
+            WITH yearly AS (
+              SELECT CAST(FLOOR("Period") AS INTEGER) AS yr, SUM("Data_value") AS total
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+              GROUP BY 1
+            )
+            SELECT yr, total,
+                   LAG(total) OVER (ORDER BY yr) AS prev_total,
+                   ROUND(100.0 * (total - LAG(total) OVER (ORDER BY yr))
+                         / NULLIF(LAG(total) OVER (ORDER BY yr), 0), 2) AS yoy_pct
+            FROM yearly
+            ORDER BY yr
+        ''',
+    },
+    {
+        "id": "H18",
+        "difficulty": "hard",
+        "question": "Top 5 industries contributing more than 5% of total Data_value.",
+        "expected_sql": f'''
+            WITH agg AS (
+              SELECT "Series_title_2" AS industry, SUM("Data_value") AS total
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+              GROUP BY 1
+            ),
+            grand AS (SELECT SUM(total) AS g FROM agg)
+            SELECT a.industry, a.total,
+                   ROUND(100.0 * a.total / NULLIF(g.g, 0), 2) AS share_pct
+            FROM agg a CROSS JOIN grand g
+            WHERE 100.0 * a.total / NULLIF(g.g, 0) > 5
+            ORDER BY a.total DESC
+            LIMIT 5
+        ''',
+    },
+    {
+        "id": "H19",
+        "difficulty": "hard",
+        "question": "For each year, the industry with highest sum Data_value (window rank).",
+        "expected_sql": f'''
+            WITH yearly AS (
+              SELECT CAST(FLOOR("Period") AS INTEGER) AS yr,
+                     "Series_title_2" AS industry,
+                     SUM("Data_value") AS total
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+              GROUP BY 1, 2
+            )
+            SELECT yr, industry, total
+            FROM yearly
+            QUALIFY RANK() OVER (PARTITION BY yr ORDER BY total DESC) = 1
+            ORDER BY yr
+        ''',
+    },
+    {
+        "id": "H20",
+        "difficulty": "hard",
+        "question": "Industries where average Data_value is below overall average but total is in top 10.",
+        "expected_sql": f'''
+            WITH agg AS (
+              SELECT "Series_title_2" AS industry,
+                     AVG("Data_value") AS avg_val,
+                     SUM("Data_value") AS total
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+              GROUP BY 1
+            ),
+            overall AS (SELECT AVG("Data_value") AS oavg FROM {TABLE} WHERE "Data_value" IS NOT NULL),
+            ranked AS (
+              SELECT a.*, RANK() OVER (ORDER BY a.total DESC) AS rnk
+              FROM agg a
+            )
+            SELECT r.industry, r.avg_val, r.total, o.oavg
+            FROM ranked r CROSS JOIN overall o
+            WHERE r.rnk <= 10 AND r.avg_val < o.oavg
+            ORDER BY r.total DESC
+        ''',
+    },
+    {
+        "id": "H21",
+        "difficulty": "hard",
+        "question": "STATUS values whose share of total Data_value exceeds 20%.",
+        "expected_sql": f'''
+            WITH agg AS (
+              SELECT "STATUS", SUM("Data_value") AS total
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+              GROUP BY 1
+            ),
+            grand AS (SELECT SUM(total) AS g FROM agg)
+            SELECT a.STATUS, a.total,
+                   ROUND(100.0 * a.total / NULLIF(g.g, 0), 2) AS share_pct
+            FROM agg a CROSS JOIN grand g
+            WHERE 100.0 * a.total / NULLIF(g.g, 0) > 20
+            ORDER BY a.total DESC
+        ''',
+    },
+    {
+        "id": "H22",
+        "difficulty": "hard",
+        "question": "Running total of yearly Data_value ordered by year.",
+        "expected_sql": f'''
+            WITH yearly AS (
+              SELECT CAST(FLOOR("Period") AS INTEGER) AS yr, SUM("Data_value") AS total
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+              GROUP BY 1
+            )
+            SELECT yr, total,
+                   SUM(total) OVER (ORDER BY yr ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total
+            FROM yearly
+            ORDER BY yr
+        ''',
+    },
+    {
+        "id": "H23",
+        "difficulty": "hard",
+        "question": "Top 3 Series_title_1 within each STATUS by sum Data_value.",
+        "expected_sql": f'''
+            WITH agg AS (
+              SELECT "STATUS", "Series_title_1" AS title, SUM("Data_value") AS total
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+              GROUP BY 1, 2
+            )
+            SELECT STATUS, title, total
+            FROM agg
+            QUALIFY RANK() OVER (PARTITION BY STATUS ORDER BY total DESC) <= 3
+            ORDER BY STATUS, total DESC
+        ''',
+    },
+    {
+        "id": "H24",
+        "difficulty": "hard",
+        "question": "Coefficient of variation of Data_value by Series_title_1 (top 5 by CV).",
+        "expected_sql": f'''
+            SELECT "Series_title_1" AS title,
+                   STDDEV_SAMP("Data_value") / NULLIF(AVG("Data_value"), 0) AS cv
+            FROM {TABLE}
+            WHERE "Data_value" IS NOT NULL
+            GROUP BY 1
+            HAVING COUNT(*) >= 5
+            ORDER BY cv DESC NULLS LAST
+            LIMIT 5
+        ''',
+    },
+    {
+        "id": "H25",
+        "difficulty": "hard",
+        "question": "Years where total Data_value decreased versus previous year.",
+        "expected_sql": f'''
+            WITH yearly AS (
+              SELECT CAST(FLOOR("Period") AS INTEGER) AS yr, SUM("Data_value") AS total
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+              GROUP BY 1
+            )
+            SELECT yr, total, LAG(total) OVER (ORDER BY yr) AS prev_total
+            FROM yearly
+            QUALIFY total < LAG(total) OVER (ORDER BY yr)
+            ORDER BY yr
+        ''',
+    },
+    {
+        "id": "H26",
+        "difficulty": "hard",
+        "question": "Industries with at least 20 rows and average Data_value above overall average.",
+        "expected_sql": f'''
+            WITH agg AS (
+              SELECT "Series_title_2" AS industry,
+                     COUNT(*) AS n,
+                     AVG("Data_value") AS avg_val
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+              GROUP BY 1
+            ),
+            overall AS (SELECT AVG("Data_value") AS oavg FROM {TABLE} WHERE "Data_value" IS NOT NULL)
+            SELECT a.industry, a.n, a.avg_val, o.oavg
+            FROM agg a CROSS JOIN overall o
+            WHERE a.n >= 20 AND a.avg_val > o.oavg
+            ORDER BY a.avg_val DESC
+        ''',
+    },
+    {
+        "id": "H27",
+        "difficulty": "hard",
+        "question": "Percentage of total Data_value for top 3 industries combined.",
+        "expected_sql": f'''
+            WITH agg AS (
+              SELECT "Series_title_2" AS industry, SUM("Data_value") AS total
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+              GROUP BY 1
+            ),
+            top3 AS (
+              SELECT SUM(total) AS top_total FROM (
+                SELECT total FROM agg ORDER BY total DESC LIMIT 3
+              )
+            ),
+            grand AS (SELECT SUM(total) AS g FROM agg)
+            SELECT ROUND(100.0 * t.top_total / NULLIF(g.g, 0), 2) AS top3_share_pct
+            FROM top3 t CROSS JOIN grand g
+        ''',
+    },
+    {
+        "id": "H28",
+        "difficulty": "hard",
+        "question": "Duplicate Series_reference + Period + Series_title_1 combinations count.",
+        "expected_sql": f'''
+            SELECT COUNT(*) AS duplicate_group_count FROM (
+              SELECT "Series_reference", "Period", "Series_title_1", COUNT(*) AS c
+              FROM {TABLE}
+              GROUP BY 1, 2, 3
+              HAVING COUNT(*) > 1
+            )
+        ''',
+    },
+    {
+        "id": "H29",
+        "difficulty": "hard",
+        "question": "Median Data_value by year.",
+        "expected_sql": f'''
+            SELECT CAST(FLOOR("Period") AS INTEGER) AS yr, MEDIAN("Data_value") AS median_val
+            FROM {TABLE}
+            WHERE "Data_value" IS NOT NULL
+            GROUP BY 1
+            ORDER BY 1
+        ''',
+    },
+    {
+        "id": "H30",
+        "difficulty": "hard",
+        "question": "Industries ranked by share of total with cumulative share (pareto).",
+        "expected_sql": f'''
+            WITH agg AS (
+              SELECT "Series_title_2" AS industry, SUM("Data_value") AS total
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+              GROUP BY 1
+            ),
+            ranked AS (
+              SELECT industry, total,
+                     total / SUM(total) OVER () AS share,
+                     SUM(total) OVER (ORDER BY total DESC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+                       / SUM(total) OVER () AS cum_share
+              FROM agg
+            )
+            SELECT industry, total,
+                   ROUND(100.0 * share, 2) AS share_pct,
+                   ROUND(100.0 * cum_share, 2) AS cum_share_pct
+            FROM ranked
+            ORDER BY total DESC
+        ''',
+    },
+    # --- +10 very_hard (V16–V25) ---
+    {
+        "id": "V16",
+        "difficulty": "very_hard",
+        "question": "Top 5 industries by revenue share among those with >=10 rows; keep only share>3%; compare avg to overall avg.",
+        "expected_sql": f'''
+            WITH agg AS (
+              SELECT "Series_title_2" AS industry,
+                     SUM("Data_value") AS revenue,
+                     AVG("Data_value") AS avg_val,
+                     COUNT(*) AS n
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+              GROUP BY 1
+              HAVING COUNT(*) >= 10
+            ),
+            grand AS (SELECT SUM(revenue) AS g, AVG(avg_val) AS unused FROM agg),
+            overall AS (SELECT AVG("Data_value") AS oavg FROM {TABLE} WHERE "Data_value" IS NOT NULL)
+            SELECT a.industry, a.revenue, a.avg_val, a.n,
+                   ROUND(100.0 * a.revenue / NULLIF(g.g, 0), 2) AS share_pct,
+                   o.oavg,
+                   a.avg_val - o.oavg AS vs_overall
+            FROM agg a CROSS JOIN grand g CROSS JOIN overall o
+            WHERE 100.0 * a.revenue / NULLIF(g.g, 0) > 3
+            ORDER BY a.revenue DESC
+            LIMIT 5
+        ''',
+    },
+    {
+        "id": "V17",
+        "difficulty": "very_hard",
+        "question": "Find industries whose yearly total increased YoY while row count decreased YoY (latest year vs prior).",
+        "expected_sql": f'''
+            WITH yearly AS (
+              SELECT "Series_title_2" AS industry,
+                     CAST(FLOOR("Period") AS INTEGER) AS yr,
+                     SUM("Data_value") AS total,
+                     COUNT(*) AS n
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+              GROUP BY 1, 2
+            ),
+            paired AS (
+              SELECT industry, yr, total, n,
+                     LAG(total) OVER (PARTITION BY industry ORDER BY yr) AS prev_total,
+                     LAG(n) OVER (PARTITION BY industry ORDER BY yr) AS prev_n
+              FROM yearly
+            )
+            SELECT industry, yr, total, prev_total, n, prev_n
+            FROM paired
+            WHERE prev_total IS NOT NULL
+              AND total > prev_total
+              AND n < prev_n
+            ORDER BY industry, yr
+        ''',
+    },
+    {
+        "id": "V18",
+        "difficulty": "very_hard",
+        "question": "Per STATUS, top industry by revenue and its contribution percent to that STATUS total.",
+        "expected_sql": f'''
+            WITH agg AS (
+              SELECT "STATUS", "Series_title_2" AS industry, SUM("Data_value") AS total
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+              GROUP BY 1, 2
+            ),
+            ranked AS (
+              SELECT *,
+                     SUM(total) OVER (PARTITION BY STATUS) AS status_total,
+                     RANK() OVER (PARTITION BY STATUS ORDER BY total DESC) AS rnk
+              FROM agg
+            )
+            SELECT STATUS, industry, total, status_total,
+                   ROUND(100.0 * total / NULLIF(status_total, 0), 2) AS contrib_pct
+            FROM ranked
+            WHERE rnk = 1
+            ORDER BY STATUS
+        ''',
+    },
+    {
+        "id": "V19",
+        "difficulty": "very_hard",
+        "question": "Industries above overall average Data_value but below overall average Magnitude, with n>=5.",
+        "expected_sql": f'''
+            WITH agg AS (
+              SELECT "Series_title_2" AS industry,
+                     AVG("Data_value") AS avg_val,
+                     AVG("Magnitude") AS avg_mag,
+                     COUNT(*) AS n
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+              GROUP BY 1
+            ),
+            overall AS (
+              SELECT AVG("Data_value") AS oavg, AVG("Magnitude") AS omag
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+            )
+            SELECT a.industry, a.avg_val, a.avg_mag, a.n, o.oavg, o.omag
+            FROM agg a CROSS JOIN overall o
+            WHERE a.n >= 5 AND a.avg_val > o.oavg AND a.avg_mag < o.omag
+            ORDER BY a.avg_val DESC
+        ''',
+    },
+    {
+        "id": "V20",
+        "difficulty": "very_hard",
+        "question": "Nested: average of per-STATUS industry totals, then industries whose average STATUS-total exceeds overall average of those.",
+        "expected_sql": f'''
+            WITH base AS (
+              SELECT "STATUS", "Series_title_2" AS industry, SUM("Data_value") AS status_total
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+              GROUP BY 1, 2
+            ),
+            ind AS (
+              SELECT industry, AVG(status_total) AS avg_status_total
+              FROM base
+              GROUP BY 1
+            ),
+            overall AS (SELECT AVG(avg_status_total) AS o FROM ind)
+            SELECT i.industry, i.avg_status_total, o.o AS overall_avg
+            FROM ind i CROSS JOIN overall o
+            WHERE i.avg_status_total > o.o
+            ORDER BY i.avg_status_total DESC
+        ''',
+    },
+    {
+        "id": "V21",
+        "difficulty": "very_hard",
+        "question": "Top 3 industries per year by share of that year's total Data_value.",
+        "expected_sql": f'''
+            WITH yearly AS (
+              SELECT CAST(FLOOR("Period") AS INTEGER) AS yr,
+                     "Series_title_2" AS industry,
+                     SUM("Data_value") AS total
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+              GROUP BY 1, 2
+            ),
+            scored AS (
+              SELECT yr, industry, total,
+                     total / SUM(total) OVER (PARTITION BY yr) AS share,
+                     RANK() OVER (PARTITION BY yr ORDER BY total DESC) AS rnk
+              FROM yearly
+            )
+            SELECT yr, industry, total, ROUND(100.0 * share, 2) AS share_pct
+            FROM scored
+            WHERE rnk <= 3
+            ORDER BY yr, rnk
+        ''',
+    },
+    {
+        "id": "V22",
+        "difficulty": "very_hard",
+        "question": "Regions-like Series_title_2 contributing >15% of total while having fewer rows than overall average rows-per-industry.",
+        "expected_sql": f'''
+            WITH agg AS (
+              SELECT "Series_title_2" AS industry,
+                     SUM("Data_value") AS revenue,
+                     COUNT(*) AS n
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+              GROUP BY 1
+            ),
+            stats AS (
+              SELECT SUM(revenue) AS grand, AVG(n) AS avg_n FROM agg
+            )
+            SELECT a.industry, a.revenue, a.n,
+                   ROUND(100.0 * a.revenue / NULLIF(s.grand, 0), 2) AS share_pct,
+                   s.avg_n
+            FROM agg a CROSS JOIN stats s
+            WHERE 100.0 * a.revenue / NULLIF(s.grand, 0) > 15
+              AND a.n < s.avg_n
+            ORDER BY a.revenue DESC
+        ''',
+    },
+    {
+        "id": "V23",
+        "difficulty": "very_hard",
+        "question": "Among Series_title_1 with at least 50 rows, top 5 by average order-like Data_value vs overall average.",
+        "expected_sql": f'''
+            WITH agg AS (
+              SELECT "Series_title_1" AS title,
+                     COUNT(*) AS n,
+                     AVG("Data_value") AS avg_val
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+              GROUP BY 1
+              HAVING COUNT(*) >= 50
+            ),
+            overall AS (SELECT AVG("Data_value") AS oavg FROM {TABLE} WHERE "Data_value" IS NOT NULL)
+            SELECT a.title, a.n, a.avg_val, o.oavg, a.avg_val - o.oavg AS delta
+            FROM agg a CROSS JOIN overall o
+            ORDER BY a.avg_val DESC
+            LIMIT 5
+        ''',
+    },
+    {
+        "id": "V24",
+        "difficulty": "very_hard",
+        "question": "Multi-condition: top 10 industries last 3 period-years, n>=5, share>2%, avg above overall avg.",
+        "expected_sql": f'''
+            WITH recent AS (
+              SELECT * FROM {TABLE}
+              WHERE "Period" >= (SELECT MAX("Period") - 3 FROM {TABLE})
+                AND "Data_value" IS NOT NULL
+            ),
+            agg AS (
+              SELECT "Series_title_2" AS industry,
+                     SUM("Data_value") AS revenue,
+                     AVG("Data_value") AS avg_val,
+                     COUNT(*) AS n
+              FROM recent
+              GROUP BY 1
+              HAVING COUNT(*) >= 5
+            ),
+            grand AS (SELECT SUM(revenue) AS g FROM agg),
+            overall AS (SELECT AVG("Data_value") AS oavg FROM recent)
+            SELECT a.industry, a.revenue, a.avg_val, a.n,
+                   ROUND(100.0 * a.revenue / NULLIF(g.g, 0), 2) AS share_pct,
+                   o.oavg
+            FROM agg a CROSS JOIN grand g CROSS JOIN overall o
+            WHERE 100.0 * a.revenue / NULLIF(g.g, 0) > 2
+              AND a.avg_val > o.oavg
+            ORDER BY a.revenue DESC
+            LIMIT 10
+        ''',
+    },
+    {
+        "id": "V25",
+        "difficulty": "very_hard",
+        "question": "Paraphrase: highest revenue suppliers-like industries excluding those with fewer than 8 observations, showing each share of total.",
+        "expected_sql": f'''
+            WITH agg AS (
+              SELECT "Series_title_2" AS industry,
+                     SUM("Data_value") AS revenue,
+                     COUNT(*) AS n
+              FROM {TABLE}
+              WHERE "Data_value" IS NOT NULL
+              GROUP BY 1
+              HAVING COUNT(*) >= 8
+            ),
+            grand AS (SELECT SUM(revenue) AS g FROM agg)
+            SELECT a.industry, a.revenue, a.n,
+                   ROUND(100.0 * a.revenue / NULLIF(g.g, 0), 2) AS share_pct
+            FROM agg a CROSS JOIN grand g
+            ORDER BY a.revenue DESC
+            LIMIT 10
+        ''',
+    },
 ]
 
 
-assert len(BENCHMARK_QUESTIONS) == 50
-assert sum(1 for q in BENCHMARK_QUESTIONS if q["difficulty"] == "easy") == 10
-assert sum(1 for q in BENCHMARK_QUESTIONS if q["difficulty"] == "medium") == 10
-assert sum(1 for q in BENCHMARK_QUESTIONS if q["difficulty"] == "hard") == 15
-assert sum(1 for q in BENCHMARK_QUESTIONS if q["difficulty"] == "very_hard") == 15
+assert len(BENCHMARK_QUESTIONS) == 100
+assert sum(1 for q in BENCHMARK_QUESTIONS if q["difficulty"] == "easy") == 20
+assert sum(1 for q in BENCHMARK_QUESTIONS if q["difficulty"] == "medium") == 25
+assert sum(1 for q in BENCHMARK_QUESTIONS if q["difficulty"] == "hard") == 30
+assert sum(1 for q in BENCHMARK_QUESTIONS if q["difficulty"] == "very_hard") == 25
