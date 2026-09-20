@@ -188,6 +188,39 @@ if not DATABASE_URL:
 SANDBOX_TIMEOUT_SECONDS = int(os.getenv("SANDBOX_TIMEOUT_SECONDS", "10"))
 SANDBOX_MEMORY_LIMIT_MB = int(os.getenv("SANDBOX_MEMORY_LIMIT_MB", "256"))
 
+# CORS — explicit origins only (never use "*" with allow_credentials=True).
+# Override / extend via comma-separated CORS_ALLOWED_ORIGINS.
+_DEFAULT_CORS_ORIGINS = (
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+    "https://marketmind-ai-pankaj.vercel.app",
+    "https://frontend-rho-nine-9ijte1vo4k.vercel.app",
+    "https://marketmind-ai-pankajombishnoi-6423s-projects.vercel.app",
+)
+
+
+def get_cors_allowed_origins() -> list[str]:
+    """Return deduped allowlist for FastAPI CORSMiddleware."""
+    raw = (os.getenv("CORS_ALLOWED_ORIGINS") or "").strip()
+    origins: list[str] = []
+    if raw:
+        origins.extend(o.strip().rstrip("/") for o in raw.split(",") if o.strip())
+    else:
+        origins.extend(_DEFAULT_CORS_ORIGINS)
+    # Preserve order, drop empties/dupes
+    seen: set[str] = set()
+    out: list[str] = []
+    for o in origins:
+        if o and o not in seen:
+            seen.add(o)
+            out.append(o)
+    return out
+
+
+CORS_ALLOWED_ORIGINS = get_cors_allowed_origins()
+
 
 def get_runtime_data_root() -> Path:
     """Writable root for uploads/scratch (uses /tmp on Vercel)."""

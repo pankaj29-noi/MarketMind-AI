@@ -11,7 +11,13 @@ from pydantic import BaseModel
 from charset_normalizer import detect
 
 # Import configurations & helpers
-from backend.config import DATABASE_URL, log_provider_startup_diagnostics, get_uploads_root, get_scratch_root
+from backend.config import (
+    DATABASE_URL,
+    CORS_ALLOWED_ORIGINS,
+    log_provider_startup_diagnostics,
+    get_uploads_root,
+    get_scratch_root,
+)
 from backend.database.connection import init_db, get_pool, close_pool, get_db_connection
 from backend.database.repository import (
     create_session, 
@@ -116,10 +122,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Enable CORS for Vite frontend
+# Explicit CORS allowlist (local Vite + production Vercel). Override via CORS_ALLOWED_ORIGINS.
+logger.info("CORS allowed origins: %s", CORS_ALLOWED_ORIGINS)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allow all origins for easier portfolio deployment
+    allow_origins=CORS_ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
