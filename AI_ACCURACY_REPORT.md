@@ -115,22 +115,27 @@ See `MODEL_FAILURE_ANALYSIS.md`. No fabricated NL failure rates.
 
 ## 13. Commits (this upgrade track)
 
-| SHA / message |
-|---|
-| `ef44550` docs: AI architecture + performance baseline |
-| *(pending)* feat: question IR, pattern fast-path, MEDIUM complexity, one-shot repair |
-| *(pending)* test: expand deterministic suite to 100 questions |
-| Prior: MCP skip, analyze cache, Lead restore, window top-N fix |
+| SHA | Message |
+|---|---|
+| `ef44550` | docs: AI architecture + performance baseline |
+| `2fbaa2d` | feat: question IR, pattern fast-path, one-shot repair |
+| `9fc09eb` | test: expand deterministic suite to 100 questions |
+| Prior | MCP skip, analyze cache, Lead restore, window top-N |
 
 ---
 
 ## 14. Deployment verification
 
-Pending push. Will probe:
+Probed after push `9fc09eb` (2026-09-21):
 
-- `GET /health`
-- Lead analyze
-- suggested-questions
-- Frontend 200
+| Probe | Result |
+|---|---|
+| `GET /health` | **200** `agent_ready=true` |
+| `POST /marketplace/lead/analyze` | **200** |
+| `POST /session/.../suggested-questions` | **404** |
+| Live OpenAPI paths | **12** (local HEAD has 17) |
+| Frontend Vercel | **200** |
 
-Do not claim success without probe evidence.
+**Conclusion:** Render is **not** fully synced to latest `main`. Manual redeploy required for question-IR / fast-path / 100-Q code to be live. Do not claim full deploy success.
+
+
