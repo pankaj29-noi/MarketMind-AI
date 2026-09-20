@@ -34,6 +34,10 @@ def create_session(session_id: str, dataset_id: str, dataset_name: Optional[str]
 
 def get_session(session_id: str) -> Optional[Dict[str, Any]]:
     """Retrieves session details by session_id."""
+    # Prefer in-memory first — avoids multi-second Postgres waits when DB is down.
+    mem = _MEMORY_SESSIONS.get(session_id)
+    if mem:
+        return mem
     query = "SELECT * FROM sessions WHERE id = %s;"
     try:
         with get_db_connection() as conn:
@@ -44,7 +48,7 @@ def get_session(session_id: str) -> Optional[Dict[str, Any]]:
                     return dict(row)
     except Exception as e:
         logger.error(f"Failed to get session from Postgres: {e}")
-    return _MEMORY_SESSIONS.get(session_id)
+    return None
 
 def save_report(
     session_id: str, 

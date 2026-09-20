@@ -139,9 +139,15 @@ def validate_sql(query: str, schema: Dict[str, Any] = None, question: str = "") 
                 critical_issues.append("Missing GROUP BY when required: non-aggregated columns are selected alongside aggregates.")
 
     # 3. Missing LIMIT for Top/Bottom N queries
+    # Accept LIMIT, or window-rank top-N (QUALIFY / ROW_NUMBER / RANK / DENSE_RANK).
     question_lower = question.lower()
     if re.search(r"\b(top|bottom|first|last)\s+\d+\b", question_lower) or re.search(r"\b(highest|lowest)\b", question_lower):
-        if "LIMIT" not in query_upper:
+        has_limit = "LIMIT" in query_upper
+        has_window_topn = bool(
+            re.search(r"\bQUALIFY\b", query_upper)
+            or re.search(r"\b(ROW_NUMBER|RANK|DENSE_RANK)\s*\(", query_upper)
+        )
+        if not has_limit and not has_window_topn:
             critical_issues.append("Missing LIMIT for Top/Bottom N queries.")
 
     # 4. Incorrect ORDER BY direction

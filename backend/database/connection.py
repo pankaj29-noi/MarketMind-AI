@@ -58,7 +58,7 @@ def get_pool() -> ConnectionPool:
         
         # Wait until the pool is ready (fail fast if DB is unreachable)
         try:
-            new_pool.wait(timeout=8)
+            new_pool.wait(timeout=2)
         except Exception as e:
             logger.error(f"PostgreSQL pool failed to become ready: {e}")
             _POOL_UNAVAILABLE = True
