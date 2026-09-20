@@ -227,3 +227,24 @@ def cache_stats() -> Dict[str, Any]:
             "sessions": len(_RESULT_CACHE),
             "entries": sum(len(b) for b in _RESULT_CACHE.values()),
         }
+
+
+# ---------------------------------------------------------------------------
+# Report payload limits (avoid shipping huge DuckDB result sets to the UI)
+# ---------------------------------------------------------------------------
+
+MAX_REPORT_TABLE_ROWS = 200
+
+
+def truncate_table_rows(
+    rows: List[Any],
+    limit: int = MAX_REPORT_TABLE_ROWS,
+) -> Tuple[List[Any], bool, int]:
+    """
+    Cap rows for API/report payloads.
+    Returns (truncated_rows, was_truncated, original_count).
+    """
+    original = len(rows or [])
+    if original <= limit:
+        return list(rows or []), False, original
+    return list(rows[:limit]), True, original

@@ -1,12 +1,13 @@
 # MarketMind AI — PERFORMANCE_REPORT
 
-**Date:** 2026-09-21
+**Date:** 2026-09-21  
 **Focus:** 3,000–4,000 row CSV analytics — fast, accurate, grounded, safe
 
 Related artifacts:
 - `PERFORMANCE_BASELINE.md` (pre-change measurements)
 - `BENCHMARK_REPORT.md` (50-question deterministic SQL suite @ 3k rows)
 - `scratch/perf_baseline/BENCHMARK_REPORT_4000.md` (same suite @ 4k rows)
+- `scratch/perf_baseline/pipeline_direct.json` (pre-fix LangGraph node timings)
 
 ---
 
@@ -18,21 +19,22 @@ Related artifacts:
 | Thin schema | ~1–2 ms |
 | Rich profile | ~12–13 ms |
 | Hard SQL (CTE/windows) | ~2–5 ms |
-| **MCP `get_dataset_schema`** | **~10,782 ms** then **always fails** (subprocess cannot see in-memory DuckDB; falls through to dead Postgres ~8 s) |
-| Full NL analyze E2E | Incomplete (dominated by MCP + retry loops; aborted) |
+| **MCP `get_dataset_schema`** | **~10,782 ms** then **always fails** |
+| Full NL analyze E2E | Partial (`pipeline_direct.json`): easy ~37s (schema alone **10.6s**), medium ~197s (3 retries), hard ~120s |
 
-Postgres pool wait on dead local DB: ~8 s (reduced to 2 s after fix).
-Upload via TestClient with dead Postgres: ~8 s.
+Postgres pool wait on dead local DB: ~8 s (reduced to 2 s).
 
 ---
 
 ## 2. Bottlenecks found
 
-1. **P0 — MCP stdio schema/tool calls on CSV path** (~10.8 s/call, useless for in-memory DuckDB). Also hit visualization chartability + analysis correlation/outlier paths.
-2. **P1 — Thin schema** for LLM (missing null%, uniques, min/max, roles) despite adaptive profiler already existing.
+1. **P0 — MCP stdio schema/tool calls on CSV path** (~10.8 s/call, useless for in-memory DuckDB).
+2. **P1 — Thin schema** for LLM (missing null%, uniques, min/max, roles).
 3. **P1 — SQL quality false positive** rejecting window `QUALIFY` / `RANK` top-N without `LIMIT`.
 4. **P1 — Session lookup** tried Postgres before memory → multi-second stalls.
-5. **P0 product regression** — `/marketplace/lead/analyze` route missing (dead code after suggested-questions insert).
+5. **P0 product regression** — `/marketplace/lead/analyze` route missing (fixed).
+6. **P1 — Repeated viz LLM** even for trivial SIMPLE scalar results.
+7. **P1 — Analysis result cache helpers** existed but were not wired into `/analyze`.
 
 DuckDB itself is **not** a bottleneck at 3k–4k rows.
 
@@ -42,14 +44,17 @@ DuckDB itself is **not** a bottleneck at 3k–4k rows.
 
 | Change | Files |
 |---|---|
-| Skip MCP for CSV schema; use rich `profile_dataset` + session cache | `schema_profiler.py`, `analytics_perf.py`, `session_manager.py` |
-| Richer LLM schema context (null%, unique, min/max, role, fingerprint) | `demo_data.py` `format_schema_context_for_llm` |
-| Remove MCP from visualization chartability + analysis correlation/outliers | `visualization_executor.py`, `analysis_engine.py` |
+| Skip MCP for CSV schema; rich `profile_dataset` + session cache | `schema_profiler.py`, `analytics_perf.py`, `session_manager.py` |
+| Richer LLM schema context | `demo_data.py` `format_schema_context_for_llm` |
+| Remove MCP from viz chartability + analysis stats | `visualization_executor.py`, `analysis_engine.py` |
 | Accept window top-N without LIMIT | `sql_quality_validator.py` |
 | Memory-first session lookup; pool wait 8s→2s | `repository.py`, `connection.py` |
-| Slightly broader deterministic SQL routing (without stealing ambiguous/Python cases) | `supervisor.py` |
+| Broader deterministic SQL routing | `supervisor.py` |
 | Restore Lead Intelligence route | `main.py` |
-| Question complexity classifier + session-isolated result cache helpers | `analytics_perf.py` |
+| Complexity classifier + session-isolated result cache | `analytics_perf.py` |
+| **Wire result cache into `/analyze`** | `main.py` |
+| **Skip visualization for SIMPLE ≤5-row results** | `supervisor.py` |
+| **Cap report table payloads at 200 rows** | `report_agent.py`, `analytics_perf.py` |
 | 50-question benchmark harness + tests | `backend/benchmarks/*`, `test_analytics_perf.py` |
 
 ---
@@ -67,77 +72,87 @@ Difficulties (3k): easy 10/10, medium 10/10, hard 15/15, very_hard 15/15.
 
 Expected answers = executed `expected_sql` (not fabricated).
 
-### Schema path after fix
+### Schema path AFTER fix (measured 2026-09-21)
 
 | Stage | ms |
 |---|---:|
-| `schema_profiler_node` cold (rich) | **~117** (first profile; includes stats) |
-| `schema_profiler_node` with cached state | **~0.01** |
-| `get_or_build_csv_schema_profile` cached | **~0.00** |
+| `schema_profiler_node` cold (rich, 3k) | **~176** |
+| `schema_profiler_node` hot (state cache) | **~0.01** |
+| `get_or_build_csv_schema_profile` session cache | **~0.00** |
 
-**Estimated savings vs baseline MCP fail path:** ~10.8 s → ~0.1 s on first schema (~**100×**), subsequent questions ~0 ms schema.
+**vs baseline MCP fail path:** ~10,782 ms → ~176 ms on first schema (~**61×**), subsequent questions ~0 ms schema.
 
-### LLM-call reduction
+Pre-fix LangGraph easy run had `schema_profiler: 10632 ms` (`pipeline_direct.json`). That stage alone is now sub-200 ms.
 
-Not fully re-measured end-to-end with Groq in this pass (cost/time). Structural reductions:
-
-- 0 MCP subprocess spawns on CSV schema / viz chartability / analysis stats
-- Deterministic SQL routing retained for common aggregation language
-- Window top-N no longer forces repair loops solely for missing LIMIT
-
-Honest gap: full NL→SQL→report latency + LLM calls/question still need a controlled live Groq run after Render deploy.
-
----
-
-## 7. LLM-call reduction (structural)
+### LLM-call reduction (structural + measured)
 
 | Before | After |
 |---|---|
 | MCP schema spawn every CSV analyze | Removed |
-| MCP chartability spawn | Removed (local `is_result_chartable`) |
-| MCP correlation/outlier spawn | Removed (local pandas paths) |
+| MCP chartability spawn | Removed |
+| MCP correlation/outlier spawn | Removed |
 | False LIMIT repairs on QUALIFY | Removed |
+| Viz LLM for SIMPLE ≤5-row answers | Skipped → REPORT |
+| Identical question re-ask (same session/fingerprint) | Cache hit → 0 LLM |
+
+Honest gap: full 50-question NL→SQL→report Groq scoring not re-run in this pass (cost). SQL ground-truth suite covers analytical correctness of the hard query shapes.
 
 ---
 
-## 8. Cache performance
+## 7. Cache performance
 
 | Cache | Behavior |
 |---|---|
 | Session `schema_profile_cache` | Per session/table; invalidated on `register_csv` / eviction |
-| Graph state schema reuse | Unchanged; now prefers `rich` profiles |
-| Analysis result cache helpers | Session + dataset + fingerprint + normalized question; isolation tested |
+| Graph state schema reuse | Prefers `rich` profiles |
+| `/analyze` result cache | Session + dataset + fingerprint + normalized question; TTL 600s; max 64/session; isolation tested |
+
+---
+
+## 8. Frontend
+
+- Results tables already paginate (10 rows/page) in `ResultsTableCard`.
+- Backend now caps report table payloads at **200 rows** with `truncated` + `row_count_total`.
+- Analyze guarded by `isAnalyzing` (no duplicate concurrent posts).
+- Trace polling only while an analyze is in flight.
 
 ---
 
 ## 9. Remaining limitations
 
-- Full LangGraph NL accuracy @ 50 questions with live LLM not yet scored in `BENCHMARK_REPORT.md` (SQL ground-truth only).
-- Adaptive suggested-questions still not confirmed on Render until deploy sync.
+- Full LangGraph NL accuracy @ 50 questions with live LLM not scored in `BENCHMARK_REPORT.md` (SQL ground-truth only).
+- Render deploy sync historically lagged GitHub `main` — verify after each push.
 - Sandbox AST gaps (`open` / unbound `os` / `getattr` eval) from prior audit remain.
 - Free Render cold starts still dominate perceived UI latency.
-- Result-cache not yet wired into `/analyze` response path (helpers + tests ready).
 
 ---
 
-## 10. Git commits
+## 10. Git commits (performance track)
 
-(Filled at commit time — see `git log`.)
+| SHA | Message |
+|---|---|
+| `e98abda` | fix(api): restore marketplace lead analyze route |
+| `3099456` | perf: skip MCP for CSV schema and cache rich DuckDB profiles |
+| `f7bcef0` | fix: accept window top-N SQL and fail-fast session lookups |
+| `7f939d8` | test: add 50-question CSV analytics benchmark and perf regressions |
+| `3687646` | docs: record CSV performance baseline, benchmark, and audit |
+| *(this push)* | perf: wire analyze cache, skip SIMPLE viz, cap report rows |
 
 ---
 
 ## 11. Deployment verification
 
-Pending push + Render/Vercel auto-deploy. Will verify:
+Pending push. Will verify:
 
 - `GET https://marketmind-ai-93u1.onrender.com/health`
-- OpenAPI includes `/marketplace/lead/analyze` and suggested-questions
+- OpenAPI includes `/marketplace/lead/analyze` and `/session/{id}/suggested-questions`
 - Frontend https://marketmind-ai-pankaj.vercel.app
 
 Do not claim live deploy success until probes return evidence.
 
 ---
 
-## Test suite
+## Test suite (targeted)
 
-`python -m pytest -q` → **191 passed** after these changes.
+- `pytest backend/tests/test_analytics_perf.py` — pass (includes 3k schema <2s, no MCP)
+- `pytest backend/tests/test_marketplace_lead.py` — pass (Lead route restored)

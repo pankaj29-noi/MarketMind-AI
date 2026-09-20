@@ -155,3 +155,20 @@ PY
 ```
 
 Do not treat incomplete LLM E2E numbers as fabricated successes — they are explicitly marked incomplete above.
+
+---
+
+## AFTER measurements (post-optimization, same machine)
+
+Captured after MCP-skip + rich profile cache landed (see `PERFORMANCE_REPORT.md`):
+
+| Stage (3k CSV) | After ms |
+|---|---:|
+| `schema_profiler_node` cold (rich) | **~176** |
+| `schema_profiler_node` hot | **~0.01** |
+| Session schema cache hit | **~0.00** |
+
+Compared to baseline MCP fail path (**~10,782 ms**): ~**61×** faster first schema; subsequent questions skip profiling.
+
+50-question deterministic SQL suite: **50/50** @ 3k and 4k (see `BENCHMARK_REPORT.md`).
+

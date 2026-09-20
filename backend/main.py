@@ -633,6 +633,50 @@ async def analyze_data(
     except Exception as e:
         logger.warning(f"Failed to retrieve existing schema state: {e}")
 
+    # Session-isolated result cache (fingerprint-bound; never cross datasets)
+    from backend.services.analytics_perf import (
+        classify_question_complexity,
+        get_cached_analysis_result,
+        put_cached_analysis_result,
+        get_or_build_csv_schema_profile,
+    )
+    from backend.mcp.data_access import is_csv_session
+
+    schema_fingerprint = None
+    if isinstance(existing_schema, dict) and existing_schema.get("fingerprint"):
+        schema_fingerprint = existing_schema.get("fingerprint")
+    elif is_csv_session(session_id):
+        try:
+            rich = get_or_build_csv_schema_profile(session_id, dataset_id)
+            if not existing_schema:
+                existing_schema = rich
+            schema_fingerprint = rich.get("fingerprint")
+        except Exception as e:
+            logger.warning("Could not build CSV schema fingerprint for cache: %s", e)
+
+    question_complexity = classify_question_complexity(question)
+    if schema_fingerprint:
+        cached_body = get_cached_analysis_result(
+            session_id, dataset_id, schema_fingerprint, question
+        )
+        if isinstance(cached_body, dict) and cached_body.get("success") is not None:
+            body = dict(cached_body)
+            debug = dict(body.get("debug") or {})
+            debug["cache_hit"] = True
+            debug["question_complexity"] = question_complexity
+            body["debug"] = debug
+            query_block = dict(body.get("query") or {})
+            query_block["execution_time_ms"] = 0.0
+            query_block["cache_hit"] = True
+            body["query"] = query_block
+            logger.info(
+                "Analyze cache hit session=%s dataset=%s complexity=%s",
+                session_id,
+                dataset_id,
+                question_complexity,
+            )
+            return body
+
     initial_state = {
         # Session Persistent
         "session_id":        session_id,
@@ -807,6 +851,23 @@ async def analyze_data(
 
         # Sanitize response to prevent JSON serialization crashes on NaNs/Infs
         response_body = sanitize_for_json(response_body)
+
+        debug_out = dict(response_body.get("debug") or {})
+        debug_out["cache_hit"] = False
+        debug_out["question_complexity"] = question_complexity
+        response_body["debug"] = debug_out
+
+        if success and schema_fingerprint:
+            try:
+                put_cached_analysis_result(
+                    session_id,
+                    dataset_id,
+                    schema_fingerprint,
+                    question,
+                    response_body,
+                )
+            except Exception as e:
+                logger.warning("Failed to cache analyze result: %s", e)
 
         return response_body
 

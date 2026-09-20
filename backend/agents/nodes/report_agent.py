@@ -802,6 +802,8 @@ def report_agent_node(state: AgentState) -> Dict[str, Any]:
     qr_rows = query_result.get("rows", [])
     if qr_cols and qr_rows:
         # rows from mcp/data_access come as list-of-dicts; normalise to list-of-lists
+        from backend.services.analytics_perf import truncate_table_rows
+
         normalised_rows: list[list] = []
         for row in qr_rows:
             if isinstance(row, dict):
@@ -810,11 +812,17 @@ def report_agent_node(state: AgentState) -> Dict[str, Any]:
                 normalised_rows.append(list(row))
             else:
                 normalised_rows.append([row])
-        tables.append({
+        capped_rows, was_truncated, original_n = truncate_table_rows(normalised_rows)
+        table_payload = {
             "title": "Query Results",
             "columns": qr_cols,
-            "rows": normalised_rows,
-        })
+            "rows": capped_rows,
+            "row_count_total": original_n,
+            "truncated": was_truncated,
+        }
+        if was_truncated:
+            table_payload["title"] = f"Query Results (showing {len(capped_rows)} of {original_n})"
+        tables.append(table_payload)
 
     # ── Build tables from analysis_artifacts ─────────────────────────────────
     analysis_artifacts = artifacts

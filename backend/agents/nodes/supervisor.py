@@ -245,8 +245,19 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
                     selected_cap = llm_decision.get("selected_capability")
             elif worker_name in ("SQL", "PYTHON_ANALYSIS"):
                 from backend.services.visualization.validator import is_result_chartable
+                from backend.services.analytics_perf import classify_question_complexity
                 query_res = state.get("query_result", {})
-                if is_result_chartable(query_res):
+                q_text = state.get("resolved_question") or state.get("question") or ""
+                complexity = classify_question_complexity(q_text)
+                row_n = int(query_res.get("row_count") or len(query_res.get("rows") or []))
+                # SIMPLE scalar/small aggregates: skip viz LLM path (report is enough)
+                if complexity == "SIMPLE" and row_n <= 5:
+                    reasoning = (
+                        f"{worker_name} OK. SIMPLE question with {row_n} row(s); "
+                        "skipping VISUALIZATION to reduce LLM calls."
+                    )
+                    selected_cap = "REPORT"
+                elif is_result_chartable(query_res):
                     reasoning = f"{worker_name} executed successfully. Result is chartable. Proceeding to VISUALIZATION."
                     selected_cap = "VISUALIZATION"
                 else:

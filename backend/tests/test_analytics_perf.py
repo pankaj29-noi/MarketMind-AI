@@ -16,6 +16,8 @@ from backend.services.analytics_perf import (
     put_cached_analysis_result,
     clear_session_analysis_cache,
     make_cache_key,
+    truncate_table_rows,
+    MAX_REPORT_TABLE_ROWS,
 )
 from backend.services.sql.sql_quality_validator import validate_sql
 from backend.agents.nodes.schema_profiler import schema_profiler_node
@@ -130,6 +132,40 @@ class TestAnalyticsPerf(unittest.TestCase):
         k1 = make_cache_key("a", "d", "f", "Hello World")
         k2 = make_cache_key("b", "d", "f", "Hello World")
         self.assertNotEqual(k1, k2)
+
+    def test_truncate_table_rows(self):
+        rows = [[i] for i in range(MAX_REPORT_TABLE_ROWS + 50)]
+        capped, truncated, original = truncate_table_rows(rows)
+        self.assertTrue(truncated)
+        self.assertEqual(original, MAX_REPORT_TABLE_ROWS + 50)
+        self.assertEqual(len(capped), MAX_REPORT_TABLE_ROWS)
+        small, truncated2, original2 = truncate_table_rows([[1], [2]])
+        self.assertFalse(truncated2)
+        self.assertEqual(original2, 2)
+        self.assertEqual(small, [[1], [2]])
+
+    def test_schema_profiler_cold_under_2s_on_3k(self):
+        """Regression: CSV schema must not take the old ~10s MCP fail path."""
+        src = Path(__file__).resolve().parents[2] / "scratch" / "perf_baseline" / "sample_3000.csv"
+        if not src.exists():
+            self.skipTest("sample_3000.csv missing")
+        sid = f"t3k_{uuid.uuid4().hex[:8]}"
+        did = "ds_3k"
+        session_manager.register_csv(sid, str(src), did)
+        state = {
+            "session_id": sid,
+            "dataset_id": did,
+            "schema_profile": {},
+            "retry_count": 0,
+            "execution_metadata": [],
+        }
+        with patch("backend.mcp.client.invoke_mcp_tool_sync") as mcp:
+            out = schema_profiler_node(state)
+            mcp.assert_not_called()
+        self.assertTrue(out["schema_profile"].get("rich"))
+        self.assertEqual(out["schema_profile"].get("row_count"), 3000)
+        self.assertLess(out["last_worker_result"]["duration_ms"], 2000)
+        session_manager.evict_session(sid)
 
 
 if __name__ == "__main__":
