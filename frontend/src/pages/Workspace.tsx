@@ -14,7 +14,7 @@ import { UploadZone } from '@/components/ui/UploadZone';
 import { Analytics } from './Analytics';
 import { LeadIntelligence } from './LeadIntelligence';
 import { AgentMonitoring } from './AgentMonitoring';
-import { MARKETPLACE_SAMPLE_QUESTIONS } from '@/lib/marketplace';
+import { MARKETPLACE_SAMPLE_QUESTIONS, ANALYTICS_DEMO_QUESTION_CATEGORIES } from '@/lib/marketplace';
 import { SuggestedQuestionsPanel } from '@/components/analysis/SuggestedQuestionsPanel';
 import type { SuggestedQuestion } from '@/services/suggestedQuestions';
 import type { ChatMessage } from '@/types/index';
@@ -31,6 +31,9 @@ interface WorkspaceProps {
   uploadError: string | null;
   handleFileUpload: (file: File) => void;
   onLoadMarketplaceDemo?: () => void;
+  onLoadAnalyticsDemo?: () => void;
+  isLoadingAnalyticsDemo?: boolean;
+  demoExampleCategories?: Record<string, string[]> | null;
   onUploadClick: () => void;
   history: any[];
   onSelectHistory: (id: string) => void;
@@ -62,7 +65,7 @@ interface WorkspaceProps {
 
 export const Workspace: React.FC<WorkspaceProps> = ({
   session, hasDataset, datasetName, rowCount, columns, tables,
-  isUploading, isLoadingDemo, uploadError, handleFileUpload, onLoadMarketplaceDemo, onUploadClick,
+  isUploading, isLoadingDemo, uploadError, handleFileUpload, onLoadMarketplaceDemo, onLoadAnalyticsDemo, isLoadingAnalyticsDemo, demoExampleCategories, onUploadClick,
   history, onSelectHistory, selectedHistoryId,
   isLeftSidebarCollapsed, onToggleLeftSidebar,
   isRightSidebarCollapsed, onToggleRightSidebar,
@@ -228,20 +231,41 @@ export const Workspace: React.FC<WorkspaceProps> = ({
                             </p>
                           </div>
 
-                          {onLoadMarketplaceDemo && (
-                            <button
-                              type="button"
-                              onClick={onLoadMarketplaceDemo}
-                              disabled={isUploading || isLoadingDemo}
-                              className="group flex w-full items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3.5 text-sm font-semibold text-primary transition-all hover:bg-primary hover:text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              {isLoadingDemo ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Store className="h-4 w-4" />
+                          {(onLoadAnalyticsDemo || onLoadMarketplaceDemo) && (
+                            <div className="flex w-full flex-col gap-2">
+                              {onLoadAnalyticsDemo && (
+                                <button
+                                  type="button"
+                                  onClick={onLoadAnalyticsDemo}
+                                  disabled={isUploading || isLoadingDemo || !!isLoadingAnalyticsDemo}
+                                  className="group flex w-full items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3.5 text-sm font-semibold text-primary transition-all hover:bg-primary hover:text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  {isLoadingAnalyticsDemo ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Sparkles className="h-4 w-4" />
+                                  )}
+                                  {isLoadingAnalyticsDemo
+                                    ? 'Loading 4k analytics demo…'
+                                    : 'Load Analytics Demo (4k Orders)'}
+                                </button>
                               )}
-                              {isLoadingDemo ? 'Loading marketplace demo…' : 'Load Marketplace Demo'}
-                            </button>
+                              {onLoadMarketplaceDemo && (
+                                <button
+                                  type="button"
+                                  onClick={onLoadMarketplaceDemo}
+                                  disabled={isUploading || isLoadingDemo || !!isLoadingAnalyticsDemo}
+                                  className="group flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-background/60 px-4 py-3 text-sm font-medium text-muted-foreground transition-all hover:border-primary/40 hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  {isLoadingDemo ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Store className="h-4 w-4" />
+                                  )}
+                                  {isLoadingDemo ? 'Loading marketplace demo…' : 'Load Lead Marketplace Demo (multi-table)'}
+                                </button>
+                              )}
+                            </div>
                           )}
 
                           <div className="relative flex items-center gap-3 text-[11px] uppercase tracking-wider text-muted-foreground">
@@ -291,19 +315,39 @@ export const Workspace: React.FC<WorkspaceProps> = ({
                             <div className="mt-2 type-mono text-[10px] text-muted-foreground/80">
                               › QUERY // QUESTION READY
                             </div>
-                            <div className="mt-6 grid w-full gap-2 sm:grid-cols-2 text-left">
-                              {MARKETPLACE_SAMPLE_QUESTIONS.map((q) => (
-                                <button
-                                  key={q}
-                                  type="button"
-                                  onClick={() => handleSubmitQuestion(q)}
-                                  disabled={isAnalyzing}
-                                  className="mm-micro-control border border-border bg-background/30 px-3.5 py-3 text-left text-xs leading-relaxed text-foreground/90 hover:bg-primary/5 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40"
-                                >
-                                  <span className="mr-1.5 text-primary/70">›</span>
-                                  {q}
-                                </button>
+                            <div className="mt-6 w-full space-y-4 text-left">
+                              {Object.entries(
+                                demoExampleCategories && Object.keys(demoExampleCategories).length > 0
+                                  ? demoExampleCategories
+                                  : session?.dataset_id === 'marketmind_demo_4000'
+                                    ? ANALYTICS_DEMO_QUESTION_CATEGORIES
+                                    : { Samples: MARKETPLACE_SAMPLE_QUESTIONS }
+                              ).map(([category, questions]) => (
+                                <div key={category}>
+                                  <div className="mb-2 type-section-label text-[10px] text-muted-foreground">
+                                    Try an example · {category}
+                                  </div>
+                                  <div className="grid w-full gap-2 sm:grid-cols-2">
+                                    {questions.map((q) => (
+                                      <button
+                                        key={q}
+                                        type="button"
+                                        onClick={() => setQuestion(q)}
+                                        onDoubleClick={() => handleSubmitQuestion(q)}
+                                        disabled={isAnalyzing}
+                                        className="mm-micro-control border border-border bg-background/30 px-3.5 py-3 text-left text-xs leading-relaxed text-foreground/90 hover:bg-primary/5 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40"
+                                        title="Click to fill the composer · double-click to run live analysis"
+                                      >
+                                        <span className="mr-1.5 text-primary/70">›</span>
+                                        {q}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
                               ))}
+                              <p className="text-[11px] text-muted-foreground">
+                                Examples only populate the question — answers always come from the live DuckDB analytics pipeline.
+                              </p>
                             </div>
                           </div>
                           )

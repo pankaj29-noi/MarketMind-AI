@@ -26,6 +26,8 @@ export const App: React.FC = () => {
   const [session, setSession] = useState<UploadResponse | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isLoadingDemo, setIsLoadingDemo] = useState(false);
+  const [isLoadingAnalyticsDemo, setIsLoadingAnalyticsDemo] = useState(false);
+  const [demoExampleCategories, setDemoExampleCategories] = useState<Record<string, string[]> | null>(null);
   const [uploadError, setUploadError] = useState('');
 
   // Adaptive suggested questions (CSV uploads only)
@@ -140,6 +142,7 @@ export const App: React.FC = () => {
       const data: UploadResponse = await response.json();
       applySession(data, { adaptive: false });
       clearSuggestions();
+      setDemoExampleCategories(null);
       const tableCount = data.tables?.length ?? 0;
       toast(
         `Marketplace demo loaded — ${tableCount} tables · ${data.row_count?.toLocaleString() ?? 0} rows`,
@@ -150,6 +153,36 @@ export const App: React.FC = () => {
       toast(err.message || 'Demo load failed', 'error');
     } finally {
       setIsLoadingDemo(false);
+    }
+  };
+
+  const handleLoadAnalyticsDemo = async () => {
+    setIsLoadingAnalyticsDemo(true);
+    setUploadError('');
+    try {
+      const response = await fetch(`${API_BASE}/marketplace/analytics-demo`, {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({}));
+        throw new Error(detail.detail || 'Failed to load analytics demo.');
+      }
+      const data: UploadResponse & {
+        example_questions?: Record<string, string[]>;
+        warm_start?: unknown;
+      } = await response.json();
+      applySession(data, { adaptive: false });
+      clearSuggestions();
+      setDemoExampleCategories(data.example_questions || null);
+      toast(
+        `Analytics demo loaded — ${data.row_count?.toLocaleString() ?? 4000} orders (schema warm-started)`,
+        'success'
+      );
+    } catch (err: any) {
+      setUploadError(err.message || 'Error loading analytics demo.');
+      toast(err.message || 'Analytics demo load failed', 'error');
+    } finally {
+      setIsLoadingAnalyticsDemo(false);
     }
   };
 
@@ -375,9 +408,12 @@ export const App: React.FC = () => {
         tables={session?.tables}
         isUploading={isUploading}
         isLoadingDemo={isLoadingDemo}
+        isLoadingAnalyticsDemo={isLoadingAnalyticsDemo}
         uploadError={uploadError}
         handleFileUpload={handleFileUpload}
         onLoadMarketplaceDemo={handleLoadMarketplaceDemo}
+        onLoadAnalyticsDemo={handleLoadAnalyticsDemo}
+        demoExampleCategories={demoExampleCategories}
         onUploadClick={() => fileInputRef.current?.click()}
         history={sidebarHistory}
         onSelectHistory={(id) => {

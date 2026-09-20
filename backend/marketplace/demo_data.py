@@ -18,6 +18,11 @@ logger = logging.getLogger(__name__)
 MARKETPLACE_DATASET_ID = "marketplace"
 MARKETPLACE_DATASET_NAME = "MarketMind Marketplace Demo"
 
+# Single-table 4k analytics demo (universal NL→SQL showcase)
+ANALYTICS_DEMO_DATASET_ID = "marketmind_demo_4000"
+ANALYTICS_DEMO_DATASET_NAME = "MarketMind Analytics Demo (4k Orders)"
+ANALYTICS_DEMO_CSV = "marketmind_demo_marketplace_4000.csv"
+
 # Ordered table list — stable for UI and schema context
 MARKETPLACE_TABLES: List[str] = [
     "categories",
@@ -115,6 +120,99 @@ def _copy_seed_csvs_to_scratch(session_id: str) -> Dict[str, str]:
         shutil.copy2(src, dest)
         paths[table] = dest
     return paths
+
+
+def get_analytics_demo_csv_path() -> str:
+    """Packaged 4k-row single-table analytics demo CSV."""
+    return os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "data",
+            ANALYTICS_DEMO_CSV,
+        )
+    )
+
+
+def load_analytics_demo(session_id: str) -> Dict[str, Any]:
+    """
+    Load the 4,000-row denormalized orders CSV into a DuckDB session.
+
+    Warm-starts rich schema profile (no premature answers). Used by the
+    universal analytics demo — questions still run through /analyze.
+    """
+    src = get_analytics_demo_csv_path()
+    if not os.path.exists(src):
+        # Best-effort regenerate
+        try:
+            from backend.benchmarks.generate_demo_csv import generate
+            from pathlib import Path
+
+            generate(Path(src))
+        except Exception as e:
+            raise FileNotFoundError(f"Analytics demo CSV missing: {src} ({e})")
+
+    scratch = _scratch_dir(session_id)
+    os.makedirs(scratch, exist_ok=True)
+    dest = os.path.join(scratch, ANALYTICS_DEMO_CSV)
+    shutil.copy2(src, dest)
+
+    table = ANALYTICS_DEMO_DATASET_ID
+    session_manager.register_csv(session_id, dest, table)
+
+    from backend.services.analytics_perf import get_or_build_csv_schema_profile
+
+    profile = get_or_build_csv_schema_profile(session_id, table)
+    columns = profile.get("columns") or []
+    return {
+        "session_id": session_id,
+        "dataset_id": table,
+        "dataset_name": ANALYTICS_DEMO_DATASET_NAME,
+        "tables": [table],
+        "table_stats": [
+            {
+                "name": table,
+                "row_count": profile.get("row_count", 0),
+                "columns": [
+                    {"name": c.get("name"), "dtype": c.get("dtype")} for c in columns
+                ],
+            }
+        ],
+        "row_count": profile.get("row_count", 0),
+        "columns": columns,
+        "relationships": [],
+        "fingerprint": profile.get("fingerprint"),
+        "demo_kind": "analytics_csv_4k",
+        "warm_start": {
+            "schema_profiled": True,
+            "date_range": profile.get("date_range"),
+            "column_count": profile.get("column_count") or len(columns),
+        },
+    }
+
+
+def get_demo_example_questions() -> Dict[str, List[str]]:
+    """Categorized example questions for UI — never paired with answers."""
+    from backend.benchmarks.demo_marketplace_questions import DEMO_QUESTIONS
+
+    cats: Dict[str, List[str]] = {}
+    for q in DEMO_QUESTIONS:
+        if q.get("expect_abstain") or q.get("expect_refuse"):
+            continue
+        cat = q.get("category") or "Business Analytics"
+        cats.setdefault(cat, [])
+        if len(cats[cat]) < 8:
+            cats[cat].append(q["question"])
+    # Ensure error-demo examples appear
+    cats.setdefault("Reliability Checks", [])
+    cats["Reliability Checks"].extend(
+        [
+            "Which supplier has the highest employee satisfaction?",
+            "Delete all orders from the database.",
+        ]
+    )
+    return cats
 
 
 def load_marketplace_demo(session_id: str) -> Dict[str, Any]:

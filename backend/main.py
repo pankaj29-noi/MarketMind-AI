@@ -381,6 +381,61 @@ async def load_marketplace_demo_endpoint(_: None = Depends(limit_expensive_endpo
         raise HTTPException(status_code=500, detail=f"Failed to load marketplace demo: {str(e)}")
 
 
+@app.post("/marketplace/analytics-demo")
+async def load_analytics_demo_endpoint(_: None = Depends(limit_expensive_endpoint)):
+    """
+    Load the 4,000-row single-table B2B orders analytics demo.
+
+    Warm-starts schema profiling only — does NOT precompute answers.
+    All questions still execute through POST /analyze.
+    """
+    from backend.marketplace.demo_data import (
+        ANALYTICS_DEMO_DATASET_ID,
+        ANALYTICS_DEMO_DATASET_NAME,
+        load_analytics_demo,
+        get_demo_example_questions,
+    )
+
+    session_id = str(uuid.uuid4())
+    try:
+        result = await asyncio.to_thread(load_analytics_demo, session_id)
+        create_session(
+            session_id=session_id,
+            dataset_id=ANALYTICS_DEMO_DATASET_ID,
+            dataset_name=ANALYTICS_DEMO_DATASET_NAME,
+        )
+        return {
+            "session_id": result["session_id"],
+            "dataset_id": result["dataset_id"],
+            "dataset_name": result["dataset_name"],
+            "row_count": result["row_count"],
+            "columns": result["columns"],
+            "tables": result["tables"],
+            "table_stats": result["table_stats"],
+            "fingerprint": result.get("fingerprint"),
+            "warm_start": result.get("warm_start"),
+            "demo_kind": result.get("demo_kind"),
+            "example_questions": get_demo_example_questions(),
+        }
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error("Analytics demo load failed: %s", e)
+        try:
+            session_manager.evict_session(session_id)
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=f"Failed to load analytics demo: {e}")
+
+
+@app.get("/marketplace/analytics-demo/examples")
+async def analytics_demo_examples():
+    """Categorized example questions (no answers)."""
+    from backend.marketplace.demo_data import get_demo_example_questions
+
+    return {"categories": get_demo_example_questions()}
+
+
 class LeadAnalyzeRequest(BaseModel):
     requirement: str
     session_id: Optional[str] = None
