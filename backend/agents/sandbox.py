@@ -55,7 +55,20 @@ def run_python_in_sandbox(session_id: str, dataset_id: str, code: str) -> Tuple[
     """
     Runs Python code inside a restricted subprocess sandbox.
     Returns: (success, error_message, outputs_dict)
+
+    Limitations (documented honestly):
+    - AST allowlist rejects dangerous imports/builtins before spawn.
+    - Subprocess env is scrubbed of secrets.
+    - Timeout is enforced; OS memory cgroups are NOT applied (SANDBOX_MEMORY_LIMIT_MB
+      is advisory / future work on hosts that support it).
+    - This is not a full seccomp/jail; treat as defense-in-depth for LLM-generated code.
     """
+    from backend.services.python.python_quality_validator import validate_python_code
+
+    ok, reason = validate_python_code(code or "")
+    if not ok:
+        return False, f"Sandbox rejected code before execution: {reason}", {}
+
     try:
         session_dir = prepare_scratch_directory(session_id, dataset_id)
     except Exception as e:

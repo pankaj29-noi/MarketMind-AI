@@ -226,12 +226,15 @@ encoded_pivot = json.loads(encoder.encode(df_pivot))
 
 # --- C. Sandbox Contract Tests ---
 
-@patch("backend.agents.nodes.visualization_generator.get_llm")
-def test_malformed_spec_handling(mock_get_llm):
-    # Setup mock LLM to return malformed JSON
-    mock_llm = MagicMock()
-    mock_llm.invoke.return_value = MagicMock(content="Invalid JSON ``` {")
-    mock_get_llm.return_value = mock_llm
+@patch("backend.config.invoke_llm")
+def test_malformed_spec_handling(mock_invoke_llm):
+    # Setup mock LLM to return malformed JSON via the real invoke_llm path
+    mock_invoke_llm.return_value = {
+        "content": "Invalid JSON ``` {",
+        "provider": "groq",
+        "model": "test",
+        "analysis_source": "groq",
+    }
     
     state = {
         "question": "Show me a chart",

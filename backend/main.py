@@ -4,7 +4,7 @@ import logging
 import asyncio
 from contextlib import asynccontextmanager
 from typing import Dict, Any, Optional
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -32,6 +32,7 @@ from backend.database.repository import (
 from backend.services.session_manager import session_manager
 from backend.agents.graph import create_agent_graph
 from backend.utils.json_sanitizer import sanitize_for_json
+from backend.utils.rate_limit import limit_expensive_endpoint
 
 # Configure logs
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -227,7 +228,10 @@ def normalize_encoding(content: bytes) -> bytes:
     raise ValueError("Could not determine CSV file encoding with high confidence.")
 
 @app.post("/upload")
-async def upload_csv(file: UploadFile = File(...)):
+async def upload_csv(
+    file: UploadFile = File(...),
+    _: None = Depends(limit_expensive_endpoint),
+):
     """
     Accepts CSV upload, normalizes character encoding to UTF-8,
     registers it in-memory in Session Manager, creates PostgreSQL session record,
@@ -326,7 +330,7 @@ async def upload_csv(file: UploadFile = File(...)):
 
 
 @app.post("/marketplace/demo")
-async def load_marketplace_demo_endpoint():
+async def load_marketplace_demo_endpoint(_: None = Depends(limit_expensive_endpoint)):
     """
     Load the packaged MarketMind B2B marketplace demo dataset into a new DuckDB session.
     Registers categories, suppliers, buyers, products, leads, and orders tables.
@@ -389,7 +393,10 @@ class FeedbackRequest(BaseModel):
 
 
 @app.post("/marketplace/lead/analyze")
-async def analyze_buyer_lead(request: LeadAnalyzeRequest):
+async def analyze_buyer_lead(
+    request: LeadAnalyzeRequest,
+    _: None = Depends(limit_expensive_endpoint),
+):
     """
     Lead Intelligence: extract a buyer requirement, match marketplace products,
     and return deterministically ranked suppliers via a dedicated LangGraph workflow.
@@ -498,7 +505,10 @@ async def get_observability_summary_endpoint():
 
 
 @app.post("/analyze")
-async def analyze_data(request: AnalyzeRequest):
+async def analyze_data(
+    request: AnalyzeRequest,
+    _: None = Depends(limit_expensive_endpoint),
+):
     """
     Drives the LangGraph pipeline, assembles and validates the AnalysisResponse,
     persists the report, records metrics, and returns the fully structured JSON.
