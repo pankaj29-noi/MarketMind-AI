@@ -2,7 +2,6 @@ import time
 import logging
 from typing import Dict, Any
 from backend.agents.state import AgentState
-from backend.mcp.data_access import get_schema
 from backend.marketplace.demo_data import (
     MARKETPLACE_DATASET_ID,
     build_marketplace_schema_profile,
@@ -12,8 +11,12 @@ logger = logging.getLogger(__name__)
 
 def schema_profiler_node(state: AgentState) -> Dict[str, Any]:
     """
-    Profiles the dataset schema (columns, types, row count) if not already done.
+    Profiles the dataset schema (columns, types, row count, stats) if not already done.
     For MarketMind multi-table demos, profiles all marketplace tables + relationships.
+
+    For uploaded CSV sessions: uses in-process DuckDB rich profiling only.
+    Never spawns MCP stdio for CSV — the subprocess cannot see in-memory DuckDB
+    and historically cost ~10s+ of failed Postgres fallbacks per question.
     """
     node_name = "schema_profiler"
     start_time = time.time()
@@ -37,6 +40,14 @@ def schema_profiler_node(state: AgentState) -> Dict[str, Any]:
         and not schema_profile.get("multi_table")
     ):
         has_valid_cache = False
+    # Prefer rich CSV profiles when cache is thin (name/dtype only)
+    if (
+        has_valid_cache
+        and dataset_id != MARKETPLACE_DATASET_ID
+        and not schema_profile.get("rich")
+        and not schema_profile.get("multi_table")
+    ):
+        has_valid_cache = False
 
     if has_valid_cache:
         logger.info(f"Schema profile already cached for session {session_id}, skipping profiling.")
@@ -52,27 +63,25 @@ def schema_profiler_node(state: AgentState) -> Dict[str, Any]:
                     profile.get("row_count"),
                 )
             else:
-                # Attempt MCP tool invocation first (single-table CSV uploads)
-                from backend.mcp.client import invoke_mcp_tool_sync
-                mcp_result = invoke_mcp_tool_sync(
-                    "get_dataset_schema",
-                    {"session_id": session_id, "dataset_id": dataset_id},
-                )
+                from backend.services.analytics_perf import get_or_build_csv_schema_profile
+                from backend.mcp.data_access import is_csv_session, get_schema
 
-                if mcp_result is not None and not mcp_result.get("error"):
-                    profile = mcp_result
-                    logger.info("Successfully fetched schema via MCP tool boundary.")
-                else:
-                    logger.warning(
-                        f"MCP tool get_dataset_schema returned invalid result or failed. "
-                        f"Fallback to internal. Result: {mcp_result}"
+                if is_csv_session(session_id):
+                    profile = get_or_build_csv_schema_profile(session_id, dataset_id)
+                    logger.info(
+                        "Rich CSV schema profiled in-process (no MCP). Columns: %s Rows: %s fingerprint=%s",
+                        [c["name"] for c in profile.get("columns", [])],
+                        profile.get("row_count"),
+                        (profile.get("fingerprint") or "")[:12],
                     )
+                else:
+                    # Non-CSV (Postgres-backed) path — direct get_schema, no MCP spawn
                     profile = get_schema(session_id, dataset_id)
-
-                logger.info(
-                    f"Schema profiled successfully. Columns: "
-                    f"{[c['name'] for c in profile['columns']]}, Rows: {profile['row_count']}"
-                )
+                    logger.info(
+                        "Schema profiled via get_schema. Columns: %s Rows: %s",
+                        [c["name"] for c in profile.get("columns", [])],
+                        profile.get("row_count"),
+                    )
 
             updates["schema_profile"] = profile
         except Exception as e:

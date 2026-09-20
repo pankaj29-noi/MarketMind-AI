@@ -36,12 +36,18 @@ def _get_deterministic_routing(question: str) -> Optional[str]:
         "correlation", "outlier", "anomaly", "distribution", "skew", "kurtosis", "descriptive", "trend"
     ]
     if any(keyword in q_lower for keyword in stats_keywords):
+        # Prefer SQL when the question asks for breakdowns across dimensions
+        if any(w in q_lower for w in ("by ", "across", "per ", "group", "categor", "segment", "region")):
+            return "SQL"
         return "ANALYSIS"
         
-    # 3. Obvious SQL retrieval/aggregation keywords
+    # 3. SQL retrieval/aggregation — prefer DuckDB for typical analytics NL
+    # Keep this list specific enough that ambiguous questions still reach the LLM router.
     sql_keywords = [
         "average", "count", "sum", "top", "bottom", "group by", "order by", "limit",
         "sales", "profit", "margin", "discount", "compare", "highest", "lowest",
+        "total", "share", "percent", "ratio", "rank", "median", "mean",
+        "how many", "revenue", "data_value",
     ]
     if any(keyword in q_lower for keyword in sql_keywords):
         return "SQL"

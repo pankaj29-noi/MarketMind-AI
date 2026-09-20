@@ -396,35 +396,11 @@ def analysis_engine_node(state: AgentState) -> Dict[str, Any]:
             confidence = _compute_confidence(df)
             
             if analysis_type == "correlation":
-                from backend.mcp.client import invoke_mcp_tool_sync
-                session_id = state.get("session_id")
-                dataset_id = state.get("dataset_id")
-                mcp_args = {"session_id": session_id, "dataset_id": dataset_id}
-                if resolved_cols:
-                    mcp_args["columns"] = resolved_cols
-                mcp_res = invoke_mcp_tool_sync("calculate_correlation", mcp_args) if session_id and dataset_id else None
-                if mcp_res is not None and not mcp_res.get("error"):
-                    artifacts = mcp_res
-                    logger.info("Computed correlation via MCP tool.")
-                else:
-                    logger.warning("MCP correlation failed. Falling back to internal function.")
-                    artifacts = _run_correlation(df)
+                artifacts = _run_correlation(df)
             elif analysis_type == "distribution":
                 artifacts = _run_distribution(df)
             elif analysis_type == "outlier":
-                from backend.mcp.client import invoke_mcp_tool_sync
-                session_id = state.get("session_id")
-                dataset_id = state.get("dataset_id")
-                mcp_args = {"session_id": session_id, "dataset_id": dataset_id}
-                if resolved_cols:
-                    mcp_args["columns"] = resolved_cols
-                mcp_res = invoke_mcp_tool_sync("detect_outliers", mcp_args) if session_id and dataset_id else None
-                if mcp_res is not None and not mcp_res.get("error"):
-                    artifacts = mcp_res
-                    logger.info("Computed outliers via MCP tool.")
-                else:
-                    logger.warning("MCP outliers failed. Falling back to internal function.")
-                    artifacts = _run_outlier(df)
+                artifacts = _run_outlier(df)
             elif analysis_type == "trend":
                 artifacts = _run_trend(df, question, time_col)
             else:

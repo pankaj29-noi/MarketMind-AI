@@ -131,24 +131,12 @@ def visualization_executor_node(state: AgentState) -> Dict[str, Any]:
             try:
                 vis_spec = VisualizationSpec(**vis_spec_data)
                 
-                import json
-                from backend.mcp.client import invoke_mcp_tool_sync
-                query_metadata = {
-                    "columns": query_result.get("columns", []),
-                    "row_count": len(query_result.get("rows", [])),
-                    "analytical_roles": query_result.get("analytical_roles", {})
-                }
-                mcp_res = invoke_mcp_tool_sync("is_result_chartable", {"query_metadata_json": json.dumps(query_metadata)})
-                if mcp_res is not None and not mcp_res.get("error"):
-                    is_chartable_flag = mcp_res.get("is_chartable", True)
-                    logger.info("Checked chartability via MCP tool.")
-                else:
-                    logger.warning("MCP is_result_chartable failed. Falling back to internal function.")
-                    from backend.services.visualization.validator import is_result_chartable
-                    is_chartable_flag = is_result_chartable(query_result)
+                # In-process chartability only — do not spawn MCP stdio (~10s fail path).
+                from backend.services.visualization.validator import is_result_chartable
+                is_chartable_flag = is_result_chartable(query_result)
                 
                 if not is_chartable_flag:
-                    logger.info("Deterministic no_visualization: Result is not structurally chartable according to MCP/validator.")
+                    logger.info("Deterministic no_visualization: Result is not structurally chartable.")
                     success = True
                     chart_json = None
                     vis_spec.is_appropriate = False

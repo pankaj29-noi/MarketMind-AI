@@ -18,6 +18,8 @@ class Session:
         self.last_accessed: float = time.time()
         self.lock: Lock = Lock()
         self.registered_tables: List[str] = []
+        # Per-session rich schema profiles keyed by dataset/table id (never shared)
+        self.schema_profile_cache: Dict[str, dict] = {}
         logger.info(f"Created DuckDB in-memory session: {session_id}")
 
     def touch(self):
@@ -73,6 +75,14 @@ class SessionManager:
                 )
                 if table_name not in session.registered_tables:
                     session.registered_tables.append(table_name)
+                # Dataset changed — invalidate cached profile for this table only
+                if getattr(session, "schema_profile_cache", None):
+                    session.schema_profile_cache.pop(table_name, None)
+                try:
+                    from backend.services.analytics_perf import clear_session_analysis_cache
+                    clear_session_analysis_cache(session_id)
+                except Exception:
+                    pass
                 logger.info(f"Successfully registered CSV {file_path} as table {table_name} in session {session_id}")
                 return table_name
             except Exception as e:
@@ -108,6 +118,11 @@ class SessionManager:
             session = self.sessions.pop(session_id, None)
             if session:
                 session.close()
+                try:
+                    from backend.services.analytics_perf import clear_session_analysis_cache
+                    clear_session_analysis_cache(session_id)
+                except Exception:
+                    pass
                 logger.info(f"Evicted session: {session_id}")
 
     def clean_expired_sessions(self):

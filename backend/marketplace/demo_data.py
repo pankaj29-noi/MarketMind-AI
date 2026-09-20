@@ -308,10 +308,29 @@ def format_schema_context_for_llm(schema_profile: Dict[str, Any], fallback_table
     for col in schema_profile.get("columns", []):
         samples = col.get("sample_values", [])
         samples_str = f" | Samples: {samples}" if samples else ""
-        columns_desc += f"- {col['name']} ({col['dtype']}){samples_str}\n"
+        extras = []
+        if col.get("analytical_role"):
+            extras.append(f"role={col['analytical_role']}")
+        if col.get("null_pct") is not None:
+            extras.append(f"null={col['null_pct']:.1%}" if isinstance(col.get("null_pct"), float) else f"null={col['null_pct']}")
+        if col.get("unique_count") is not None:
+            extras.append(f"unique={col['unique_count']}")
+        if col.get("min") is not None or col.get("max") is not None:
+            extras.append(f"min={col.get('min')} max={col.get('max')}")
+        extras_str = f" | {', '.join(extras)}" if extras else ""
+        columns_desc += f"- {col['name']} ({col['dtype']}){samples_str}{extras_str}\n"
 
-    return (
+    header = (
         f"Dataset Table Name: {table_name}\n"
         f"Total Rows: {schema_profile.get('row_count', 'unknown')}\n"
+    )
+    if schema_profile.get("fingerprint"):
+        header += f"Fingerprint: {schema_profile.get('fingerprint')}\n"
+    if schema_profile.get("date_range"):
+        header += f"Date range: {schema_profile.get('date_range')}\n"
+    header += (
+        "IMPORTANT: Use ONLY the column names listed below. Do not invent columns.\n"
+        "Prefer DuckDB SQL aggregations; do not load the full table into Python.\n"
         f"Columns:\n{columns_desc}"
     )
+    return header
