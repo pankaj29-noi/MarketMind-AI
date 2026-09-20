@@ -3,7 +3,7 @@ import uuid
 import logging
 import asyncio
 from contextlib import asynccontextmanager
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -392,11 +392,49 @@ class FeedbackRequest(BaseModel):
     comment: Optional[str] = None
 
 
-@app.post("/marketplace/lead/analyze")
-async def analyze_buyer_lead(
-    request: LeadAnalyzeRequest,
+class SuggestedQuestionsRequest(BaseModel):
+    dataset_id: str
+    count: int = 10
+    difficulty: str = "mixed"
+    refresh: bool = False
+    exclude_ids: Optional[List[str]] = None
+
+
+@app.post("/session/{session_id}/suggested-questions")
+async def suggested_questions_endpoint(
+    session_id: str,
+    request: SuggestedQuestionsRequest,
     _: None = Depends(limit_expensive_endpoint),
 ):
+    """
+    Generate dataset-aware analytics questions for an uploaded CSV session.
+    Candidates are proven via read-only DuckDB execution before being returned.
+    """
+    from backend.services.adaptive_questions import generate_suggested_questions
+    from backend.services.session_manager import session_manager as sm
+
+    if session_id not in sm.sessions:
+        raise HTTPException(status_code=404, detail="Session not found or expired.")
+    dataset_id = (request.dataset_id or "").strip()
+    if not dataset_id:
+        raise HTTPException(status_code=400, detail="dataset_id is required.")
+    count = max(1, min(int(request.count or 10), 20))
+    try:
+        result = await asyncio.to_thread(
+            generate_suggested_questions,
+            session_id,
+            dataset_id,
+            count=count,
+            refresh=bool(request.refresh),
+            exclude_ids=list(request.exclude_ids or []),
+        )
+        return result
+    except Exception as e:
+        logger.error("suggested-questions failed: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate suggested questions for this dataset.",
+        )
     """
     Lead Intelligence: extract a buyer requirement, match marketplace products,
     and return deterministically ranked suppliers via a dedicated LangGraph workflow.
