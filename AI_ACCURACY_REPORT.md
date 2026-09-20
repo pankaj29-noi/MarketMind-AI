@@ -27,9 +27,13 @@ Not fully scored with Groq in this pass. After Render sync of `/marketplace/anal
 
 ## Deployment verification
 
-Pending push probes for:
+Probed after push `ce9410b`:
 
-- `GET /health`
-- `POST /marketplace/analytics-demo`
-- Frontend load
-- Manual simple + hard question via `/analyze`
+| Probe | Result |
+|---|---|
+| `GET /health` | **200** `agent_ready=true` |
+| Frontend Vercel | **200** |
+| `POST /marketplace/analytics-demo` | **404** — Render OpenAPI still 12 paths (only `/marketplace/demo`) |
+| Local HEAD | includes `/marketplace/analytics-demo` + examples |
+
+**Conclusion:** GitHub `main` has the full demo upgrade; Render is **not** auto-synced. Manual Render redeploy from latest `main` is required before live demo verification of simple/hard/very-hard `/analyze` questions.
