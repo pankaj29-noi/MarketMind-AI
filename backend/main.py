@@ -435,6 +435,13 @@ async def suggested_questions_endpoint(
             status_code=500,
             detail="Failed to generate suggested questions for this dataset.",
         )
+
+
+@app.post("/marketplace/lead/analyze")
+async def analyze_buyer_lead(
+    request: LeadAnalyzeRequest,
+    _: None = Depends(limit_expensive_endpoint),
+):
     """
     Lead Intelligence: extract a buyer requirement, match marketplace products,
     and return deterministically ranked suppliers via a dedicated LangGraph workflow.
