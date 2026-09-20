@@ -49,6 +49,12 @@ def validate_candidate(
     result = run_query(session_id, profile.dataset_id, candidate.proof_sql)
     if not result.get("success"):
         return False, str(result.get("error") or "execution failed")
+
+    # Result validation: advanced/expert questions must actually return findings,
+    # otherwise the suggestion would lead the user to an empty answer.
+    if candidate.difficulty in {"hard", "very_hard"}:
+        if int(result.get("row_count") or 0) < 1:
+            return False, "empty result for advanced question"
     return True, ""
 
 

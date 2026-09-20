@@ -107,6 +107,13 @@ _COMPLEX_MARKERS = (
     "top ",
     "bottom ",
     "percent",
+    "relationship",
+    "correlation",
+    "across",
+    "distribution",
+    "breakdown",
+    "driver",
+    "drivers",
     "ratio",
     "average",
     "compare",
@@ -151,18 +158,35 @@ _MEDIUM_MARKERS = (
 )
 
 
+def _marker_hits(question: str, markers: Tuple[str, ...]) -> int:
+    """Word-boundary aware marker matching (avoids 'count' inside 'discount')."""
+    hits = 0
+    for m in markers:
+        token = m.strip()
+        if not token:
+            continue
+        pattern = r"\b" + re.escape(token) + (r"\b" if token.isalnum() or " " in token else "")
+        if re.search(pattern, question):
+            hits += 1
+    return hits
+
+
+def _has_marker(question: str, markers: Tuple[str, ...]) -> bool:
+    return _marker_hits(question, markers) > 0
+
+
 def classify_question_complexity(question: str) -> str:
     """Return SIMPLE | MEDIUM | COMPLEX | VERY_COMPLEX."""
     q = (question or "").lower().strip()
     if not q:
         return "SIMPLE"
-    very_hits = sum(1 for m in _VERY_COMPLEX_MARKERS if m in q)
+    very_hits = _marker_hits(q, _VERY_COMPLEX_MARKERS)
     if very_hits >= 2 or ("top" in q and "share" in q) or ("exclude" in q and "top" in q):
         return "VERY_COMPLEX"
     if very_hits >= 1:
         return "VERY_COMPLEX"
-    complex_hits = sum(1 for m in _COMPLEX_MARKERS if m in q)
-    medium_hits = sum(1 for m in _MEDIUM_MARKERS if m in q)
+    complex_hits = _marker_hits(q, _COMPLEX_MARKERS)
+    medium_hits = _marker_hits(q, _MEDIUM_MARKERS)
     # Multi-signal analytical asks
     if complex_hits >= 3:
         return "COMPLEX"
@@ -174,9 +198,9 @@ def classify_question_complexity(question: str) -> str:
         return "MEDIUM"
     if medium_hits >= 2:
         return "MEDIUM"
-    if any(m in q for m in _SIMPLE_MARKERS) and medium_hits == 0:
+    if _has_marker(q, _SIMPLE_MARKERS) and medium_hits == 0:
         return "SIMPLE"
-    if any(m in q for m in _SIMPLE_MARKERS):
+    if _has_marker(q, _SIMPLE_MARKERS):
         return "SIMPLE"
     return "MEDIUM"
 

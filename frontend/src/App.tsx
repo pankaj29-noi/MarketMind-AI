@@ -5,6 +5,9 @@ import { API_BASE } from './lib/api';
 import { IntelligenceBackground } from './components/layout/IntelligenceBackground';
 import {
   fetchSuggestedQuestions,
+  fetchFollowupQuestions,
+  type DatasetComplexity,
+  type QuestionTierGroup,
   type SuggestedQuestion,
 } from './services/suggestedQuestions';
 
@@ -32,10 +35,16 @@ export const App: React.FC = () => {
 
   // Adaptive suggested questions (CSV uploads only)
   const [suggestedQuestions, setSuggestedQuestions] = useState<SuggestedQuestion[]>([]);
+  const [suggestedTiers, setSuggestedTiers] = useState<QuestionTierGroup[]>([]);
+  const [suggestedComplexity, setSuggestedComplexity] = useState<DatasetComplexity | null>(null);
+  const [suggestedProfile, setSuggestedProfile] = useState<
+    { row_count?: number; column_count?: number } | null
+  >(null);
   const [suggestedLoading, setSuggestedLoading] = useState(false);
   const [suggestedError, setSuggestedError] = useState<string | null>(null);
   const [suggestedMessage, setSuggestedMessage] = useState<string | null>(null);
   const [useAdaptiveSuggestions, setUseAdaptiveSuggestions] = useState(false);
+  const [followupQuestions, setFollowupQuestions] = useState<SuggestedQuestion[]>([]);
 
   // Analysis State
   const [question, setQuestion] = useState('');
@@ -51,10 +60,14 @@ export const App: React.FC = () => {
 
   const clearSuggestions = () => {
     setSuggestedQuestions([]);
+    setSuggestedTiers([]);
+    setSuggestedComplexity(null);
+    setSuggestedProfile(null);
     setSuggestedError(null);
     setSuggestedMessage(null);
     setSuggestedLoading(false);
     setUseAdaptiveSuggestions(false);
+    setFollowupQuestions([]);
   };
 
   const loadSuggestions = async (
@@ -74,17 +87,50 @@ export const App: React.FC = () => {
       const res = await fetchSuggestedQuestions({
         sessionId: data.session_id,
         datasetId: data.dataset_id,
-        count: 10,
+        count: 14,
         refresh: opts?.refresh,
         excludeIds: opts?.excludeIds,
       });
       setSuggestedQuestions(res.questions || []);
+      setSuggestedTiers(res.tiers || []);
+      setSuggestedComplexity(res.complexity || null);
+      setSuggestedProfile(res.profile_summary || null);
       setSuggestedMessage(res.message || null);
     } catch (err: any) {
       setSuggestedQuestions([]);
+      setSuggestedTiers([]);
       setSuggestedError(err.message || 'Could not generate suggestions.');
     } finally {
       setSuggestedLoading(false);
+    }
+  };
+
+  const loadFollowups = async (
+    askedQuestion: string,
+    report?: ReportSection | null
+  ) => {
+    if (!session?.session_id || !session?.dataset_id || !useAdaptiveSuggestions) return;
+    const table = report?.tables?.[0];
+    const resultColumns = table?.columns ?? [];
+    const resultRows = (table?.rows ?? []).slice(0, 5).map((row: any[]) => {
+      const obj: Record<string, unknown> = {};
+      resultColumns.forEach((col, i) => {
+        obj[col] = row?.[i];
+      });
+      return obj;
+    });
+    try {
+      const res = await fetchFollowupQuestions({
+        sessionId: session.session_id,
+        datasetId: session.dataset_id,
+        question: askedQuestion,
+        resultColumns,
+        resultRows,
+        count: 3,
+      });
+      setFollowupQuestions(res.questions || []);
+    } catch {
+      setFollowupQuestions([]);
     }
   };
 
@@ -265,7 +311,11 @@ export const App: React.FC = () => {
       }]);
 
       fetchSessionHistory(session.session_id);
-
+      if (data.success) {
+        void loadFollowups(userQuestion, data.report);
+      } else {
+        setFollowupQuestions([]);
+      }
     } catch (err: any) {
       clearInterval(pollInterval);
       const msg = String(err?.message || 'Unknown error');
@@ -435,6 +485,10 @@ export const App: React.FC = () => {
         setQuestion={setQuestion}
         handleAnalyze={handleAnalyze}
         suggestedQuestions={suggestedQuestions}
+        suggestedTiers={suggestedTiers}
+        suggestedComplexity={suggestedComplexity}
+        suggestedProfile={suggestedProfile}
+        followupQuestions={followupQuestions}
         suggestedLoading={suggestedLoading}
         suggestedError={suggestedError}
         suggestedMessage={suggestedMessage}

@@ -5,14 +5,24 @@ from typing import Dict, List, Set
 
 from backend.services.adaptive_questions.templates import QuestionCandidate
 
-DIFFICULTY_WEIGHT = {"easy": 1.0, "medium": 1.05, "hard": 1.1}
+DIFFICULTY_WEIGHT = {"easy": 1.0, "medium": 1.05, "hard": 1.1, "very_hard": 1.15}
 CATEGORY_PRIORITY = [
     "overview",
     "ranking",
     "time_analysis",
     "group_comparison",
+    "tradeoff",
+    "concentration",
+    "above_average",
+    "min_sample",
     "percentage",
+    "time_comparison",
+    "group_average",
+    "expert_multi_step",
+    "growth_decline",
     "conditional",
+    "conditional_aggregation",
+    "outlier",
     "relationship",
     "aggregation",
 ]
@@ -59,11 +69,28 @@ def select_diverse(candidates: List[QuestionCandidate], count: int) -> List[Ques
         c for c in by_cat.keys() if c not in CATEGORY_PRIORITY
     ]
 
-    # Target difficulty mix ~30/40/30
-    easy_n = max(1, int(round(count * 0.3)))
-    hard_n = max(1, int(round(count * 0.3)))
-    medium_n = max(0, count - easy_n - hard_n)
-    budgets = {"easy": easy_n, "medium": medium_n, "hard": hard_n}
+    # Target difficulty mix ~30/40/30 across difficulties actually present
+    present = {c.difficulty for c in pool}
+    if len(present) <= 1:
+        budgets = {d: count for d in present}
+    else:
+        easy_n = max(1, int(round(count * 0.3))) if "easy" in present else 0
+        hard_pool = present & {"hard", "very_hard"}
+        hard_n = max(1, int(round(count * 0.3))) if hard_pool else 0
+        medium_n = max(0, count - easy_n - hard_n)
+        budgets = {
+            "easy": easy_n,
+            "medium": medium_n,
+            "hard": hard_n if "hard" in present else 0,
+            "very_hard": hard_n if "very_hard" in present else 0,
+        }
+        if "medium" not in present:
+            # redistribute unused medium budget to the hardest tier available
+            for d in ("hard", "very_hard", "easy"):
+                if budgets.get(d):
+                    budgets[d] += medium_n
+                    break
+            budgets["medium"] = 0
 
     def take_from(cat: str) -> bool:
         bucket = by_cat.get(cat) or []

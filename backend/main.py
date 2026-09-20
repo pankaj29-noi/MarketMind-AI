@@ -492,6 +492,51 @@ async def suggested_questions_endpoint(
         )
 
 
+class FollowupQuestionsRequest(BaseModel):
+    dataset_id: str
+    question: str = ""
+    result_columns: Optional[List[str]] = None
+    result_rows: Optional[List[Dict[str, Any]]] = None
+    count: int = 3
+
+
+@app.post("/session/{session_id}/followup-questions")
+async def followup_questions_endpoint(
+    session_id: str,
+    request: FollowupQuestionsRequest,
+    _: None = Depends(limit_expensive_endpoint),
+):
+    """
+    Result-aware follow-up questions for the answer the user just received.
+    Grounded in the dataset schema and proven by read-only DuckDB execution.
+    """
+    from backend.services.adaptive_questions import generate_followup_questions
+    from backend.services.session_manager import session_manager as sm
+
+    if session_id not in sm.sessions:
+        raise HTTPException(status_code=404, detail="Session not found or expired.")
+    dataset_id = (request.dataset_id or "").strip()
+    if not dataset_id:
+        raise HTTPException(status_code=400, detail="dataset_id is required.")
+    count = max(1, min(int(request.count or 3), 6))
+    try:
+        return await asyncio.to_thread(
+            generate_followup_questions,
+            session_id,
+            dataset_id,
+            question=request.question or "",
+            result_columns=list(request.result_columns or []),
+            result_rows=list(request.result_rows or [])[:5],
+            count=count,
+        )
+    except Exception as e:
+        logger.error("followup-questions failed: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate follow-up questions for this dataset.",
+        )
+
+
 @app.post("/marketplace/lead/analyze")
 async def analyze_buyer_lead(
     request: LeadAnalyzeRequest,

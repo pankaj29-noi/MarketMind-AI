@@ -1,4 +1,13 @@
 import re
+
+
+# Aggregate functions recognised when checking GROUP BY correctness
+_AGG_FUNC_RE = (
+    r"\b(MAX|MIN|AVG|SUM|COUNT|MEDIAN|MODE|STDDEV|STDDEV_SAMP|STDDEV_POP|"
+    r"VAR_SAMP|VAR_POP|VARIANCE|CORR|COVAR_SAMP|COVAR_POP|QUANTILE|"
+    r"QUANTILE_CONT|QUANTILE_DISC|ANY_VALUE|ARG_MAX|ARG_MIN|"
+    r"STRING_AGG|LIST|FIRST|LAST)\s*\("
+)
 import logging
 from typing import Dict, Any, List
 
@@ -115,7 +124,7 @@ def validate_sql(query: str, schema: Dict[str, Any] = None, question: str = "") 
         critical_issues.append("Misuse of SELECT * when only a subset of fields is required.")
 
     # 2. Missing GROUP BY when required
-    has_aggregate = bool(re.search(r"\b(MAX|MIN|AVG|SUM|COUNT)\s*\(", query_upper))
+    has_aggregate = bool(re.search(_AGG_FUNC_RE, query_upper))
     if has_aggregate and "GROUP BY" not in query_upper:
         select_clause_match = re.search(r"SELECT\s+(.*?)\s+FROM", query, re.IGNORECASE | re.DOTALL)
         if select_clause_match:
@@ -124,7 +133,7 @@ def validate_sql(query: str, schema: Dict[str, Any] = None, question: str = "") 
             
             has_non_agg = False
             for expr in top_level_exprs:
-                if not re.search(r"\b(MAX|MIN|AVG|SUM|COUNT)\s*\(", expr, flags=re.IGNORECASE):
+                if not re.search(_AGG_FUNC_RE, expr, flags=re.IGNORECASE):
                     # Clean the expression to see if it's just a literal
                     cleaned = re.sub(r"\bAS\s+(?:\"[^\"]*\"|'[^']*'|[\w]+)", "", expr, flags=re.IGNORECASE)
                     cleaned = re.sub(r"'[^']*'", "", cleaned)

@@ -99,3 +99,170 @@ def test_empty_dataset_message():
     result = generate_suggested_questions(session_id, dataset_id, count=5)
     assert result["questions"] == []
     assert result.get("message")
+
+
+# ── Tiered discovery (quick / analytics / advanced / expert) ────────────────
+
+
+def _rich_sales_rows(n: int = 240) -> list[dict]:
+    regions = ["North", "South", "East", "West"]
+    categories = ["Electronics", "Apparel", "Grocery", "Tools"]
+    suppliers = [f"Supplier {i}" for i in range(1, 9)]
+    rows = []
+    for i in range(n):
+        year = 2024 + (i % 2)
+        month = (i % 12) + 1
+        revenue = 100 + (i * 7) % 900
+        rows.append(
+            {
+                "order_id": f"o{i}",
+                "order_date": f"{year}-{month:02d}-15",
+                "region": regions[i % len(regions)],
+                "category": categories[(i // 3) % len(categories)],
+                "supplier": suppliers[i % len(suppliers)],
+                "quantity": (i % 9) + 1,
+                "revenue": revenue,
+                "profit": round(revenue * (0.1 + (i % 5) / 50), 2),
+            }
+        )
+    return rows
+
+
+def _rich_session():
+    return _load_csv(
+        _rich_sales_rows(),
+        [
+            "order_id",
+            "order_date",
+            "region",
+            "category",
+            "supplier",
+            "quantity",
+            "revenue",
+            "profit",
+        ],
+    )
+
+
+def test_rich_dataset_produces_all_four_tiers():
+    session_id, dataset_id = _rich_session()
+    invalidate_session(session_id)
+    result = generate_suggested_questions(session_id, dataset_id, count=14)
+    tiers = {t["tier"] for t in result["tiers"]}
+    assert {"quick", "analytics", "advanced", "expert"} <= tiers, tiers
+    assert result["complexity"]["band"] in {"moderate", "rich"}
+    # Advanced/expert questions must be multi-column analytical questions
+    for q in result["questions"]:
+        if q["tier"] in {"advanced", "expert"}:
+            assert q["operations"], q
+            assert q["validation_status"] == "executed"
+
+
+def test_generated_questions_never_reference_unknown_columns():
+    session_id, dataset_id = _rich_session()
+    invalidate_session(session_id)
+    from backend.services.adaptive_questions.profiler import profile_dataset
+
+    known = {c.name for c in profile_dataset(session_id, dataset_id).columns}
+    result = generate_suggested_questions(session_id, dataset_id, count=14)
+    for q in result["questions"]:
+        for col in q.get("required_columns", []):
+            assert col in known, f"hallucinated column {col} in {q['text']}"
+
+
+def test_simple_dataset_does_not_force_expert_questions():
+    session_id, dataset_id = _load_csv(
+        [{"name": n, "age": a} for n, a in [("A", 30), ("B", 41), ("C", 25), ("D", 52)]],
+        ["name", "age"],
+    )
+    invalidate_session(session_id)
+    result = generate_suggested_questions(session_id, dataset_id, count=14)
+    tiers = {t["tier"] for t in result["tiers"]}
+    assert "expert" not in tiers
+    assert result["complexity"]["band"] in {"minimal", "basic"}
+    assert result["questions"], result.get("message")
+
+
+def test_refresh_returns_new_questions_without_repeats():
+    session_id, dataset_id = _rich_session()
+    invalidate_session(session_id)
+    first = generate_suggested_questions(session_id, dataset_id, count=12)
+    ids = [q["id"] for q in first["questions"]]
+    second = generate_suggested_questions(
+        session_id, dataset_id, count=12, refresh=True, exclude_ids=ids
+    )
+    assert second["questions"]
+    assert not (set(ids) & {q["id"] for q in second["questions"]})
+
+
+def test_cache_hit_is_fast_and_dataset_scoped():
+    session_id, dataset_id = _rich_session()
+    invalidate_session(session_id)
+    first = generate_suggested_questions(session_id, dataset_id, count=12)
+    second = generate_suggested_questions(session_id, dataset_id, count=12)
+    assert first["cache_hit"] is False
+    assert second["cache_hit"] is True
+    assert [q["id"] for q in first["questions"]] == [q["id"] for q in second["questions"]]
+
+
+def test_followups_are_grounded_in_result_and_schema():
+    from backend.mcp.data_access import run_query
+    from backend.services.adaptive_questions import generate_followup_questions
+    from backend.services.adaptive_questions.profiler import profile_dataset
+
+    session_id, dataset_id = _rich_session()
+    invalidate_session(session_id)
+    res = run_query(
+        session_id,
+        dataset_id,
+        f'SELECT region, SUM(revenue) AS rev FROM "{dataset_id}" GROUP BY 1 ORDER BY rev DESC LIMIT 5',
+    )
+    assert res["success"]
+    fu = generate_followup_questions(
+        session_id,
+        dataset_id,
+        question="Which region has the highest revenue?",
+        result_columns=res["columns"],
+        result_rows=res["rows"],
+        count=3,
+    )
+    assert fu["questions"]
+    known = {c.name for c in profile_dataset(session_id, dataset_id).columns}
+    for q in fu["questions"]:
+        for col in q.get("required_columns", []):
+            assert col in known
+        assert "employee satisfaction" not in q["text"].lower()
+
+
+def test_generated_proof_sql_is_read_only():
+    from backend.services.adaptive_questions.advanced_patterns import (
+        generate_advanced_candidates,
+    )
+    from backend.services.adaptive_questions.capabilities import build_capabilities
+    from backend.services.adaptive_questions.profiler import profile_dataset
+    from backend.services.adaptive_questions.semantics import build_semantics
+    from backend.services.adaptive_questions.templates import generate_candidates
+
+    session_id, dataset_id = _rich_session()
+    profile = profile_dataset(session_id, dataset_id)
+    semantics = build_semantics(profile)
+    caps = build_capabilities(profile, semantics)
+    candidates = generate_candidates(profile, caps, semantics) + generate_advanced_candidates(
+        profile, caps, semantics
+    )
+    banned = (
+        "insert",
+        "update ",
+        "delete",
+        "drop",
+        "alter",
+        "truncate",
+        "attach",
+        "copy ",
+        "install",
+        "load ",
+    )
+    for c in candidates:
+        low = c.proof_sql.lower()
+        assert low.strip().startswith(("select", "with"))
+        assert not any(b in low for b in banned), c.proof_sql

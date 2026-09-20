@@ -115,7 +115,25 @@ class TestReflectionAndRouting(unittest.TestCase):
         self.assertEqual(len(res["retry_history"]), 1)
 
     def test_reflection_routing_to_planner(self):
-        # Semantic error should route back to planner
+        # Semantic error on the first attempt gets one repair pass
+        state = {
+            "validation_passed": False,
+            "failure_summary": {
+                "failure_type": "semantic",
+                "error_message": "Answers sum instead of mean",
+                "code_context": "SELECT SUM(x) FROM data;",
+                "expected_vs_actual": ""
+            },
+            "retry_count": 0,
+            "retry_history": []
+        }
+
+        res = reflection_node(state)
+        self.assertEqual(res["last_worker_result"]["routing_hint"], "SQL")
+        self.assertEqual(res["retry_count"], 1)
+
+    def test_reflection_one_shot_repair_limit(self):
+        # One-shot repair policy: a second semantic failure degrades to REPORT
         state = {
             "validation_passed": False,
             "failure_summary": {
@@ -127,10 +145,10 @@ class TestReflectionAndRouting(unittest.TestCase):
             "retry_count": 1,
             "retry_history": []
         }
-        
+
         res = reflection_node(state)
-        self.assertEqual(res["last_worker_result"]["routing_hint"], "SQL")
-        self.assertEqual(res["retry_count"], 2)
+        self.assertEqual(res["last_worker_result"]["routing_hint"], "REPORT")
+        self.assertTrue(res["graceful_failure"])
 
     def test_reflection_retry_limit_cutoff(self):
         # Reaching 3 retries should trigger graceful failure routing to report_agent

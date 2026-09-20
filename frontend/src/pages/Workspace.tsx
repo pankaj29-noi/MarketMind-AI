@@ -16,7 +16,11 @@ import { LeadIntelligence } from './LeadIntelligence';
 import { AgentMonitoring } from './AgentMonitoring';
 import { MARKETPLACE_SAMPLE_QUESTIONS, ANALYTICS_DEMO_QUESTION_CATEGORIES } from '@/lib/marketplace';
 import { SuggestedQuestionsPanel } from '@/components/analysis/SuggestedQuestionsPanel';
-import type { SuggestedQuestion } from '@/services/suggestedQuestions';
+import type {
+  DatasetComplexity,
+  QuestionTierGroup,
+  SuggestedQuestion,
+} from '@/services/suggestedQuestions';
 import type { ChatMessage } from '@/types/index';
 
 interface WorkspaceProps {
@@ -52,6 +56,10 @@ interface WorkspaceProps {
   setQuestion: (q: string) => void;
   handleAnalyze: (e: React.FormEvent, q?: string) => void;
   suggestedQuestions?: SuggestedQuestion[];
+  suggestedTiers?: QuestionTierGroup[];
+  suggestedComplexity?: DatasetComplexity | null;
+  suggestedProfile?: { row_count?: number; column_count?: number } | null;
+  followupQuestions?: SuggestedQuestion[];
   suggestedLoading?: boolean;
   suggestedError?: string | null;
   suggestedMessage?: string | null;
@@ -72,6 +80,10 @@ export const Workspace: React.FC<WorkspaceProps> = ({
   sidebarTrace, sessionQueries, latestAssistantMsg,
   chatHistory, question, isAnalyzing, setQuestion, handleAnalyze,
   suggestedQuestions = [],
+  suggestedTiers = [],
+  suggestedComplexity = null,
+  suggestedProfile = null,
+  followupQuestions = [],
   suggestedLoading = false,
   suggestedError = null,
   suggestedMessage = null,
@@ -293,6 +305,9 @@ export const Workspace: React.FC<WorkspaceProps> = ({
                           useAdaptiveSuggestions ? (
                             <SuggestedQuestionsPanel
                               questions={suggestedQuestions}
+                              tiers={suggestedTiers}
+                              complexity={suggestedComplexity}
+                              profileSummary={suggestedProfile}
                               loading={suggestedLoading}
                               error={suggestedError}
                               message={suggestedMessage}
@@ -382,6 +397,29 @@ export const Workspace: React.FC<WorkspaceProps> = ({
                               activeStatus={latestAssistantMsg?.success}
                               question={question}
                             />
+                          </div>
+                        )}
+
+                        {!isAnalyzing && chatHistory.length > 0 && followupQuestions.length > 0 && (
+                          <div className="mt-10 border-t border-border/60 pt-5">
+                            <div className="type-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                              Explore further
+                            </div>
+                            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                              {followupQuestions.map((q) => (
+                                <button
+                                  key={q.id}
+                                  type="button"
+                                  onClick={() => handleSubmitQuestion(q.text)}
+                                  disabled={isAnalyzing}
+                                  title={q.why}
+                                  className="mm-micro-control border border-border bg-background/30 px-3.5 py-3 text-left text-xs leading-relaxed text-foreground/90 hover:bg-primary/5 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40"
+                                >
+                                  <span className="mr-1.5 text-primary/70">›</span>
+                                  {q.text}
+                                </button>
+                              ))}
+                            </div>
                           </div>
                         )}
                         <div ref={bottomRef} />

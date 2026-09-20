@@ -176,9 +176,9 @@ def generate_candidates(
                     difficulty="medium",
                     intent="monthly_trend",
                     proof_sql=(
-                        f"SELECT DATE_TRUNC('month', CAST({_ident(tcol)} AS TIMESTAMP)) AS month, "
+                        f"SELECT DATE_TRUNC('month', TRY_CAST({_ident(tcol)} AS TIMESTAMP)) AS month, "
                         f"SUM({_ident(measure)}) AS total_{measure} "
-                        f"FROM {table} WHERE {_ident(tcol)} IS NOT NULL "
+                        f"FROM {table} WHERE TRY_CAST({_ident(tcol)} AS TIMESTAMP) IS NOT NULL "
                         f"GROUP BY 1 ORDER BY 1 LIMIT 48"
                     ),
                     confidence=conf,

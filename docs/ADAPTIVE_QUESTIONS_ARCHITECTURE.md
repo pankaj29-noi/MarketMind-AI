@@ -135,3 +135,111 @@ Low-quality datasets return empty `questions` with an explanatory `message`.
 - Auto-joining multiple CSVs
 - Streaming question generation
 - Replacing analytics SQL planner
+
+---
+
+# v2 — Tiered Advanced Question Discovery
+
+v2 keeps everything above and adds multi-condition **advanced** and multi-step
+**expert** questions that are generated from the uploaded CSV only when that CSV
+actually supports them.
+
+## New pieces
+
+| File | Role |
+|---|---|
+| `adaptive_questions/advanced_patterns.py` | Advanced/expert pattern library + complexity score + result-aware follow-ups |
+| `adaptive_questions/engine.py` | Tier targets, family-level diversity, generation versioned cache, follow-up orchestration |
+| `adaptive_questions/capabilities.py` | Ranked dimensions/measures + `additive_measures` (never SUMs a price/ratio when an additive measure exists) |
+| `adaptive_questions/validator.py` | Adds result validation: advanced/expert suggestions must return ≥ 1 row |
+| `POST /session/{id}/followup-questions` | Result-aware "Explore further" questions |
+| `benchmarks/run_question_discovery_benchmark.py` | 8-dataset deterministic benchmark → `QUESTION_DISCOVERY_REPORT.md` |
+
+## Tiers
+
+| Tier | Meaning | Example shape |
+|---|---|---|
+| `quick` | direct single-value answers | totals, counts, distinct values |
+| `analytics` | grouped / comparative | measure by dimension, monthly trend |
+| `advanced` | multi-condition | above-average vs below-average, top-10 share, min sample size, tradeoffs, outliers |
+| `expert` | multi-step | top-N per group with exclusions, YoY growth with declining second metric, Pareto/cumulative contribution, top-quintile within group, group leader contribution |
+
+Pattern families implemented: top-N, top-N per group, above/below average, percent of
+total, group contribution, minimum sample size, multi-condition, YoY, MoM, growth +
+decline, ranking, ranking within group, group-average comparison, overall-average
+comparison, outlier detection, high/low tradeoff, conditional aggregation, cumulative
+contribution, concentration, percentile within group.
+
+## Capability-driven tier budget
+
+`compute_complexity_score(capabilities)` scores dimensions, measures, time fields and
+entities into a band:
+
+| Band | Quick | Analytics | Advanced | Expert |
+|---|---:|---:|---:|---:|
+| `rich` | 3 | 3 | 5 | 3 |
+| `moderate` | 3 | 3 | 4 | 2 |
+| `basic` | 3 | 3 | 2 | 0 |
+| `minimal` | 3 | 2 | 0 | 0 |
+
+Backfill is restricted to tiers the dataset supports, so a `name, age` CSV never gets
+forced expert questions. Empty tiers are not rendered.
+
+## Validation contract
+
+Every displayed question passes, in order:
+
+1. schema validation — bound columns must exist in the profile
+2. SQL quality validation — read-only, no forbidden keywords
+3. execution validation — proof SQL runs in the session's DuckDB
+4. result validation — advanced/expert proofs must return at least one row
+
+Rejections are logged with a reason and never surface in the UI.
+
+## Diversity
+
+Selection is family-aware: `above_overall_average` and `above_average_group` share the
+`above_average` family, ranking variants share `ranking`, etc. Only one question per
+family per response, so users never see ten near-identical ranking prompts.
+
+## Cache + refresh
+
+Cache key is `(session_id, dataset_id, fingerprint, GENERATION_VERSION)`. Bumping
+`GENERATION_VERSION` invalidates every previously generated question set. "Generate
+more" sends `refresh: true` plus `exclude_ids`, and results are not cached so the pool
+keeps rotating.
+
+## Follow-ups
+
+`POST /session/{id}/followup-questions` receives the asked question plus the first
+rows of the answer table. It maps a concrete value back to a real dimension, then
+proposes breakdown / comparison / trend / tradeoff follow-ups — each proven by
+read-only execution before display. No result value, no invented follow-up.
+
+## Response additions
+
+```json
+{
+  "generation_version": "v2-tiered",
+  "complexity": { "score": 31, "band": "rich", "advanced_possible": true, "expert_possible": true },
+  "tiers": [{ "tier": "advanced", "questions": [ ... ] }],
+  "questions": [
+    {
+      "id": "q_…",
+      "text": "Which suppliers increased revenue year over year while profit declined?",
+      "tier": "expert",
+      "required_columns": ["supplier", "order_date", "revenue", "profit"],
+      "operations": ["time_analysis", "window", "multi_metric", "comparison"],
+      "validation_status": "executed",
+      "why": "Uses supplier, order date, revenue, profit"
+    }
+  ]
+}
+```
+
+## Benchmark
+
+`python -m backend.benchmarks.run_question_discovery_benchmark` runs 8 datasets
+(sales, employees, products, customers, financial, time-series, small, messy) and
+writes `QUESTION_DISCOVERY_REPORT.md` with schema validity, execution success,
+tier coverage and cold/warm latency.
