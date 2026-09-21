@@ -20,9 +20,13 @@ from backend.utils.provider_errors import (
 @pytest.fixture(autouse=True)
 def _isolate_llm_cache():
     """These tests assert provider round-trips, so a warm response cache would mask them."""
+    from backend.services import llm_circuit
+
     llm_cache.clear()
+    llm_circuit.clear()
     yield
     llm_cache.clear()
+    llm_circuit.clear()
 
 
 class _Resp:

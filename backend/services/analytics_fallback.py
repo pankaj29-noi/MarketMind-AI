@@ -193,6 +193,38 @@ def _agg_fn(q: str, metric_role: Optional[str]) -> str:
     return "SUM" if metric_role in ("sales", "profit", "quantity") else "COUNT"
 
 
+# Concepts that look like a metric/attribute the user wants ranked or averaged.
+# If none of these tokens appear in any column name, the question cannot be answered
+# from this dataset — even when a dimension word like "supplier" is present.
+_METRIC_CONCEPTS = (
+    "satisfaction", "morale", "happiness", "sentiment",
+    "credit", "score", "rating", "nps",
+    "warranty", "claims", "commute", "distance",
+    "lifetime", "clv", "ltv",
+    "weather", "temperature", "humidity",
+    "age", "weight", "height",
+    "rep", "salesperson", "agent",
+)
+
+
+def _unsupported_metric_requested(q: str, columns: Sequence[str]) -> Optional[str]:
+    """Return the unsupported concept token if the question asks for a metric we don't have."""
+    col_blob = " ".join(c.lower().replace("_", " ") for c in columns)
+    for concept in _METRIC_CONCEPTS:
+        if not re.search(rf"\b{re.escape(concept)}\b", q):
+            continue
+        # The concept is supported only when a column name carries the same evidence.
+        if concept in col_blob or any(concept in c.lower() for c in columns):
+            continue
+        # "rating" is often present; "credit score" / "customer rating" still need evidence.
+        if concept == "score" and "score" in col_blob:
+            continue
+        if concept == "rating" and "rating" in col_blob:
+            continue
+        return concept
+    return None
+
+
 def _is_out_of_domain(q: str, roles: ColumnRoleMap) -> bool:
     marketplace_ish = bool(
         re.search(
@@ -224,6 +256,10 @@ def _single_table_sql(question: str, roles: ColumnRoleMap) -> FallbackResult:
 
     if _is_out_of_domain(q, roles):
         return FallbackResult(None, "unsupported_domain", ANALYSIS_SOURCE_FALLBACK)
+
+    missing_metric = _unsupported_metric_requested(q, roles.columns)
+    if missing_metric:
+        return FallbackResult(None, f"unsupported_metric:{missing_metric}", ANALYSIS_SOURCE_FALLBACK)
 
     # Predictive / causal questions are outside deterministic descriptive fallback
     if re.search(

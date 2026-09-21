@@ -160,10 +160,12 @@ def try_simple_deterministic_sql(
 
     tbl = _ident(table)
 
-    # Row count
-    if re.search(r"\b(how many rows|row count|number of rows|count rows)\b", q) or q in (
-        "count(*)",
-        "count all",
+    # Row count / entity count ("how many orders are there?")
+    if (
+        re.search(r"\b(how many rows|row count|number of rows|count rows)\b", q)
+        or re.search(r"\bhow many\b.+\bare there\b", q)
+        or re.search(r"\bhow many (orders|transactions|employees|products|records|accounts|subscriptions)\b", q)
+        or q in ("count(*)", "count all")
     ):
         return PatternMatch(
             "COUNT",
@@ -326,6 +328,102 @@ def try_simple_deterministic_sql(
                     f"FROM {tbl} GROUP BY 1 ORDER BY total DESC LIMIT {lim}"
                 ),
                 validation_rules=[f"max_rows:{lim}", "ordered_desc:total"],
+            )
+
+    # Aggregate by dimension: "total revenue by customer region"
+    by_match = re.search(
+        r"\b(total|sum|average|avg|mean)\s+([a-z0-9_ ]+?)\s+by\s+([a-z0-9_ ]+?)\s*$",
+        q,
+    ) or re.search(
+        r"\b([a-z0-9_ ]+)\s+by\s+([a-z0-9_ ]+)\b",
+        q,
+    )
+    if by_match and numeric and cats:
+        groups = by_match.groups()
+        if len(groups) == 3:
+            agg_word, measure_phrase, dim_phrase = groups
+            agg = "AVG" if any(w in agg_word for w in ("average", "avg", "mean")) else "SUM"
+            measure = resolve_column(measure_phrase, numeric) or resolve_column(q, numeric)
+            dim = resolve_column(dim_phrase, [c for c in cats if c])
+        else:
+            measure = resolve_column(groups[0], numeric) or resolve_column(q, numeric)
+            dim = resolve_column(groups[1], [c for c in cats if c])
+            agg = "AVG" if re.search(r"\b(average|avg|mean)\b", q) else "SUM"
+        if measure and dim and not re.search(r"\btop\s+\d+\b", q):
+            alias = "avg_value" if agg == "AVG" else "total"
+            return PatternMatch(
+                "GROUP_BY",
+                0.84,
+                sql=(
+                    f"SELECT {_ident(dim)} AS dim, {agg}({_ident(measure)}) AS {alias} "
+                    f"FROM {tbl} GROUP BY 1 ORDER BY {alias} DESC"
+                ),
+                validation_rules=["non_empty", f"ordered_desc:{alias}"],
+                reason=f"{agg.lower()} {measure} by {dim}",
+            )
+
+    # Highest / lowest group: "which customer region has the highest total revenue"
+    which_match = re.search(
+        r"\bwhich\s+([a-z0-9_ ]+?)\s+has\s+the\s+(highest|lowest|most|least)\s+(?:total\s+|average\s+)?([a-z0-9_ ]+)\??\s*$",
+        q,
+    )
+    if which_match and numeric and cats:
+        dim_phrase, direction, measure_phrase = which_match.groups()
+        dim = resolve_column(dim_phrase, [c for c in cats if c])
+        measure = resolve_column(measure_phrase, numeric) or resolve_column(q, numeric)
+        if measure and dim:
+            order = "ASC" if direction in ("lowest", "least") else "DESC"
+            return PatternMatch(
+                "TOP_1_GROUP",
+                0.86,
+                sql=(
+                    f"SELECT {_ident(dim)} AS dim, SUM({_ident(measure)}) AS total "
+                    f"FROM {tbl} GROUP BY 1 ORDER BY total {order} LIMIT 1"
+                ),
+                validation_rules=["exactly_one_row"],
+                reason=f"{direction} {measure} by {dim}",
+            )
+
+    # Filtered scalar: "total revenue for the North customer region"
+    for_match = re.search(
+        r"\b(total|sum|average|avg)\s+([a-z0-9_]+)\s+for\s+(?:the\s+)?([a-z0-9_ -]+?)(?:\s+[a-z0-9_]+)*\??\s*$",
+        q,
+    )
+    if for_match and numeric and cats:
+        agg_word, measure_token, filter_token = for_match.groups()
+        measure = resolve_column(measure_token, numeric) or col_by_lower.get(measure_token)
+        # Find a categorical column whose sample values or name fit the filter token.
+        dim = None
+        filter_value = None
+        token = filter_token.strip().lower().replace("-", " ")
+        for c in columns:
+            name = c.get("name")
+            if not name or name in numeric:
+                continue
+            samples = [str(s).lower() for s in (c.get("sample_values") or c.get("examples") or [])]
+            if token in samples or any(token == s for s in samples):
+                dim, filter_value = name, next(
+                    (str(s) for s in (c.get("sample_values") or c.get("examples") or []) if str(s).lower() == token),
+                    filter_token.strip(),
+                )
+                break
+            # Fall back: "north customer region" -> customer_region with value North
+            if name.lower() in q and token.split()[0] in q:
+                dim = name
+                filter_value = token.split()[0].title()
+                break
+        if measure and dim and filter_value:
+            agg = "AVG" if any(w in agg_word for w in ("average", "avg")) else "SUM"
+            alias = "avg_value" if agg == "AVG" else f"total_{measure}"
+            return PatternMatch(
+                "FILTERED_AGG",
+                0.82,
+                sql=(
+                    f"SELECT {agg}({_ident(measure)}) AS {alias} FROM {tbl} "
+                    f"WHERE LOWER(CAST({_ident(dim)} AS VARCHAR)) = LOWER('{filter_value.replace(chr(39), chr(39)+chr(39))}')"
+                ),
+                validation_rules=["exactly_one_row"],
+                reason=f"{agg.lower()} {measure} where {dim}={filter_value}",
             )
 
     return None
