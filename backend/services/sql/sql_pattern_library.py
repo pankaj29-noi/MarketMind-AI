@@ -442,6 +442,47 @@ def try_simple_deterministic_sql(
                 validation_rules=[f"max_rows:{lim}", "ordered_desc:total"],
             )
 
+    # Contribution / share / proportion of total by dimension (before single GROUP_BY).
+    # SQLCoder often emits illegal `SUM(col) / SUM(col) OVER ()` with GROUP BY — we
+    # answer these deterministically with a scalar subquery total instead.
+    _is_share = bool(
+        re.search(
+            r"\b("
+            r"share\s+of\s+total|percentage\s+of\s+total|%\s+of\s+total|contribution|"
+            r"proportion(?:\s+of(?:\s+total)?)?|"
+            r"share\s+of|percent(?:age)?\s+of|"
+            r"pct\s+of"
+            r")\b",
+            q,
+        )
+    )
+    if _is_share and numeric and cats and not re.search(r"\btop\s+\d+\b", q):
+        measure = resolve_column(q, numeric)
+        dim = resolve_column(q, [c for c in cats if c])
+        # "proportion of Data_value by/in each STATUS"
+        if not dim:
+            m_dim = re.search(
+                r"\b(?:by|per|in\s+each|for\s+each|each)\s+([a-z0-9_ ]+?)\s*\??\.?\s*$",
+                q,
+            )
+            if m_dim:
+                dim = resolve_column(m_dim.group(1).strip(), [c for c in cats if c])
+        if measure and dim:
+            return PatternMatch(
+                "CONTRIBUTION",
+                0.88,
+                sql=(
+                    f"SELECT {_ident(dim)} AS dim, "
+                    f"ROUND(100.0 * SUM({_ident(measure)}) / "
+                    f"NULLIF((SELECT SUM({_ident(measure)}) FROM {tbl}), 0), 2) AS pct "
+                    f"FROM {tbl} "
+                    f"WHERE {_ident(dim)} IS NOT NULL AND {_ident(measure)} IS NOT NULL "
+                    f"GROUP BY 1 ORDER BY pct DESC"
+                ),
+                validation_rules=["percent_bounds_0_100", "non_empty"],
+                reason=f"share of total {measure} by {dim}",
+            )
+
     # Dual metric by dimension: "total X and total Y by Z" (before single GROUP_BY)
     dual_matched = False
     dual = re.search(
@@ -479,7 +520,7 @@ def try_simple_deterministic_sql(
         r"\b([a-z0-9_ ]+)\s+by\s+([a-z0-9_ ]+)\b",
         q,
     )
-    if by_match and numeric and cats and not dual_matched:
+    if by_match and numeric and cats and not dual_matched and not _is_share:
         groups = by_match.groups()
         if len(groups) == 3:
             agg_word, measure_phrase, dim_phrase = groups
@@ -689,23 +730,6 @@ def try_simple_deterministic_sql(
                 ),
                 validation_rules=["non_empty"],
                 reason=f"yearly {measure}",
-            )
-
-    # Contribution / share of total by dimension
-    if re.search(r"\b(share of total|percentage of total|% of total|contribution)\b", q) and numeric and cats:
-        measure = resolve_column(q, numeric)
-        dim = resolve_column(q, [c for c in cats if c])
-        if measure and dim and not re.search(r"\btop\s+\d+\b", q):
-            return PatternMatch(
-                "CONTRIBUTION",
-                0.86,
-                sql=(
-                    f"SELECT {_ident(dim)} AS dim, "
-                    f"ROUND(100.0 * SUM({_ident(measure)}) / NULLIF((SELECT SUM({_ident(measure)}) FROM {tbl}), 0), 2) AS pct "
-                    f"FROM {tbl} GROUP BY 1 ORDER BY pct DESC"
-                ),
-                validation_rules=["percent_bounds_0_100", "non_empty"],
-                reason=f"share of total {measure} by {dim}",
             )
 
     return None

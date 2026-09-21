@@ -157,5 +157,42 @@ class TestSQLQualityValidator(unittest.TestCase):
         self.assertFalse(any("Invalid table reference" in c for c in result["critical_issues"]))
 
 
+    def test_rejects_illegal_sum_over_mix_with_group_by(self):
+        """SQLCoder often emits SUM(col)/SUM(col) OVER() which DuckDB rejects."""
+        query = (
+            "SELECT u.STATUS, SUM(u.Data_value) / NULLIF(SUM(u.Data_value) OVER (), 0) "
+            "AS proportion FROM uploaded_data u GROUP BY u.STATUS"
+        )
+        schema = {
+            "dataset_id": "uploaded_data",
+            "columns": [{"name": "STATUS"}, {"name": "Data_value"}],
+        }
+        result = validate_sql(
+            query, schema=schema, question="What proportion of Data_value by STATUS?"
+        )
+        self.assertFalse(result["is_valid"])
+        self.assertTrue(
+            any("Invalid mix of aggregate SUM" in c for c in result["critical_issues"])
+        )
+
+        # Valid: scalar subquery total
+        good = (
+            'SELECT "STATUS" AS dim, '
+            'ROUND(100.0 * SUM("Data_value") / NULLIF((SELECT SUM("Data_value") '
+            'FROM uploaded_data), 0), 2) AS pct '
+            'FROM uploaded_data GROUP BY 1 ORDER BY pct DESC'
+        )
+        ok = validate_sql(good, schema=schema, question="proportion by STATUS")
+        self.assertTrue(ok["is_valid"], ok["diagnostics"])
+
+        # Valid: SUM(SUM()) OVER after grouping
+        good2 = (
+            "SELECT STATUS, SUM(Data_value) / NULLIF(SUM(SUM(Data_value)) OVER (), 0) "
+            "AS proportion FROM uploaded_data GROUP BY STATUS"
+        )
+        ok2 = validate_sql(good2, schema=schema, question="proportion by STATUS")
+        self.assertTrue(ok2["is_valid"], ok2["diagnostics"])
+
+
 if __name__ == "__main__":
     unittest.main()

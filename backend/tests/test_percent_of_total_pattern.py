@@ -140,9 +140,14 @@ def test_unmatched_concept_resolves_to_nothing_rather_than_guessing():
     assert resolve_column("what is the weather", candidates) is None
 
 
-def test_genuinely_ambiguous_reference_returns_none():
-    """'region' matches two columns equally well; guessing one would be wrong."""
-    assert resolve_column("top 3 regions by revenue", ["customer_region", "supplier_region"]) is None
+def test_ambiguous_region_prefers_customer_primary_dim():
+    """Bare 'region' ties customer_region vs supplier_region — prefer customer_*."""
+    assert (
+        resolve_column("top 3 regions by revenue", ["customer_region", "supplier_region"])
+        == "customer_region"
+    )
+    # Still ambiguous when neither is a customer_* primary dim.
+    assert resolve_column("top 3 regions by revenue", ["east_region", "west_region"]) is None
 
 
 # ── Requirement coverage must reject a ranking offered as a percentage ───────
@@ -228,3 +233,26 @@ def test_percent_question_answers_with_a_proportion_end_to_end(con):
         """
     ).fetchone()[0]
     assert pct == pytest.approx(truth, abs=0.01)
+
+
+def test_proportion_by_status_uses_contribution_not_window_over():
+    """Regression: SQLCoder emitted SUM(col)/SUM(col) OVER() which DuckDB rejects."""
+    cols = [
+        {"name": "STATUS", "dtype": "string", "analytical_role": "categorical"},
+        {"name": "Data_value", "dtype": "number", "analytical_role": "measure"},
+        {"name": "Series_title_2", "dtype": "string", "analytical_role": "categorical"},
+    ]
+    for q in (
+        "What proportion of Data_value is in each STATUS?",
+        "Show the proportion of total Data_value by STATUS",
+        "Share of Data_value by STATUS",
+        "What percentage of Data_value comes from each STATUS?",
+    ):
+        hit = try_simple_deterministic_sql(q, "uploaded_data", cols)
+        assert hit is not None, q
+        assert hit.pattern_id == "CONTRIBUTION", (q, hit.pattern_id)
+        assert "OVER" not in hit.sql.upper()
+        assert "SELECT SUM" in hit.sql.upper()
+        assert "Data_value" in hit.sql
+        assert "STATUS" in hit.sql
+

@@ -425,6 +425,24 @@ def validate_sql(query: str, schema: Dict[str, Any] = None, question: str = "") 
             if has_non_agg:
                 critical_issues.append("Missing GROUP BY when required: non-aggregated columns are selected alongside aggregates.")
 
+    # 2b. Illegal mix: aggregate SUM(col) with window SUM(col) OVER() under GROUP BY.
+    # DuckDB rejects this (`col must appear in GROUP BY`). Correct forms are
+    # SUM(SUM(col)) OVER () after grouping, or a scalar subquery total.
+    if re.search(
+        r"\bSUM\s*\(\s*[^)]+\)\s*(?:/|\*)[^\n;]*\bSUM\s*\(\s*[^)]+\)\s+OVER\s*\(",
+        query,
+        flags=re.IGNORECASE,
+    ) and not re.search(
+        r"\bSUM\s*\(\s*SUM\s*\(",
+        query,
+        flags=re.IGNORECASE,
+    ):
+        critical_issues.append(
+            "Invalid mix of aggregate SUM(col) and window SUM(col) OVER (): "
+            "use SUM(SUM(col)) OVER () after GROUP BY, or divide by a scalar "
+            "subquery total — e.g. SUM(col) / (SELECT SUM(col) FROM t)."
+        )
+
     # 3. Missing LIMIT for Top/Bottom N queries
     # Accept LIMIT, or window-rank top-N (QUALIFY / ROW_NUMBER / RANK / DENSE_RANK).
     question_lower = question.lower()

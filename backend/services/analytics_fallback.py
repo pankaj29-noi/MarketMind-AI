@@ -642,7 +642,7 @@ def _columns_from_schema(schema_profile: Dict[str, Any], dataset_id: str) -> Tup
 
 # Pattern ids whose SQL encodes a question shape the generic resolver would answer
 # differently (and therefore wrongly).
-_PRECISE_PATTERN_IDS = frozenset({"PERCENT_OF_TOTAL_TOP_N"})
+_PRECISE_PATTERN_IDS = frozenset({"PERCENT_OF_TOTAL_TOP_N", "CONTRIBUTION", "MULTI_METRIC_GROUP"})
 
 
 def resolve_analytics_fallback(

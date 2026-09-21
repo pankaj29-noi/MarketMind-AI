@@ -1,5 +1,34 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from backend.agents.state import AgentState
+
+
+def _ask_about_hint(schema_profile: Optional[Dict[str, Any]], dataset_id: Optional[str] = None) -> str:
+    """Schema-aware hint for failure reports (CSV vs marketplace)."""
+    schema_profile = schema_profile or {}
+    if schema_profile.get("multi_table") or str(dataset_id or "") == "marketplace":
+        return (
+            "Ask about totals, rankings, and breakdowns using columns in the "
+            "currently loaded dataset (marketplace: products, suppliers, buyers, "
+            "leads, orders, categories)."
+        )
+    cols: List[str] = []
+    for c in schema_profile.get("columns") or []:
+        if isinstance(c, dict) and c.get("name"):
+            cols.append(str(c["name"]))
+        elif isinstance(c, str):
+            cols.append(c)
+    if cols:
+        preview = ", ".join(cols[:12])
+        more = f" (+{len(cols) - 12} more)" if len(cols) > 12 else ""
+        return (
+            "Ask about totals, rankings, proportions, and breakdowns using columns "
+            f"in the currently loaded dataset: {preview}{more}."
+        )
+    return (
+        "Ask about totals, rankings, and breakdowns using columns in the "
+        "currently loaded dataset."
+    )
+
 
 def map_error_to_resolution(failure_type: str) -> str:
     """
@@ -171,11 +200,7 @@ def generate_failure_report(state: AgentState) -> Dict[str, Any]:
             "insights": [
                 {
                     "title": "What you can ask about",
-                    "body": (
-                        "Ask about totals, rankings, and breakdowns using columns in the "
-                        "currently loaded dataset (marketplace: products, suppliers, buyers, "
-                        "leads, orders, categories)."
-                    ),
+                    "body": _ask_about_hint(schema_profile, state.get("dataset_id")),
                 },
                 {
                     "title": "Details",
