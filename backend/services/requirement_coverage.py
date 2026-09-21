@@ -177,11 +177,14 @@ def extract_question_requirements(question: str) -> QuestionRequirements:
 
     segment_filter = re.search(
         r"\bamong\s+(corporate|consumer|home\s+office|small\s+business)\b"
-        r"|\b(corporate|consumer|home\s+office)\s+customers?\b",
+        r"|\b(corporate|consumer|home\s+office)\s+customers?\b"
+        r"|\b(?:for|in|of)\s+(?:the\s+)?(corporate|consumer|home\s+office|small\s+business)\s+segment\b"
+        r"|\b(corporate|consumer|home\s+office|small\s+business)\s+segment\b",
         q,
     )
     if segment_filter:
-        seg = (segment_filter.group(1) or segment_filter.group(2) or "").strip()
+        seg = next((g for g in segment_filter.groups() if g), "")
+        seg = (seg or "").strip()
         if seg:
             req.filters.append(f"segment={seg.title()}")
 
@@ -1052,7 +1055,7 @@ def check_requirement_coverage(
             continue
         if key == "city" and val_l not in sql_l:
             missing.append(f"required filter missing: city={val}")
-        elif key == "segment" and val_l not in sql_l and "corporate" not in sql_l:
+        elif key == "segment" and val_l not in sql_l:
             missing.append(f"required filter missing: segment={val}")
         elif key == "channel" and val_l not in sql_l:
             missing.append(f"required filter missing: channel={val}")

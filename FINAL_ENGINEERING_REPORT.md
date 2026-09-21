@@ -2,16 +2,17 @@
 
 **Date:** 2026-09-22  
 **Scope:** Full MarketMind AI recheck → fix → test → verify → commit → push  
-**Repo:** `DataAgent-Pro` (`https://github.com/pankaj29-noi/MarketMind-AI`)
+**Repo:** `DataAgent-Pro` (`https://github.com/pankaj29-noi/MarketMind-AI`)  
+**Latest commit (this follow-up):** accuracy gates from SQL pipeline audit
 
 ---
 
 ## Verdict
 
 Safe, verified fixes from this pass were implemented and regression-tested.
-**373 / 373** backend tests passed. Frontend `tsc -b && vite build` succeeded.
-Production API remains **unavailable** because Render reports the service as
-**suspended by its owner** — this was verified with a live HTTP probe, not assumed.
+**377 / 377** backend tests passed (after accuracy follow-up). Frontend build
+succeeded earlier in the pass. Production API remains **unavailable** because
+Render reports the service as **suspended by its owner**.
 
 ---
 
@@ -34,7 +35,7 @@ hardcode answers; click uses the normal analyze pipeline.
 | Check | Result |
 |---|---|
 | `pytest backend/tests` (before rate-limit isolation) | **361 pass / 6 fail** — all 6 were HTTP **429** from shared limiter |
-| `pytest backend/tests` (after fixes) | **373 pass / 0 fail** (~73s) |
+| `pytest backend/tests` (after fixes) | **377 pass / 0 fail** (~54s) |
 | Frontend build | **pass** |
 | Frontend lint (`oxlint`) | warnings only (no errors) |
 | Multi-schema E2E (HR 3200 + IoT) | **pass** — 8 questions each, SQL validate + DuckDB execute |
@@ -60,11 +61,12 @@ hardcode answers; click uses the normal analyze pipeline.
    rejects `dataset_id` not registered on the session.
 6. **Expensive endpoint limit** raised 20→40 / 60s (safer for suggestion click-through).
 
-### Frontend / UX
-7. **Lazy-loaded Plotly** — initial bundle **5,479 kB → 871 kB** (Plotly in
-   deferred chunk ~4.6 MB).
-8. Plotly cleanup ref copy; Workspace `activePath` effect deps fixed.
-9. Suggestion wording: “top 5 {dim} values by {metric}”.
+### Accuracy (SQL pipeline follow-up)
+8. **Single-table `FROM` validation** — reject hallucinated table names; allow multi-CTE.
+9. **Segment filter coverage** — Consumer requirement no longer passes on Corporate SQL.
+10. **Fallback SQL must pass `validate_sql`**; empty LLM SQL is a hard failure.
+11. Window `OVER` aggregates no longer false-trigger GROUP BY; ORDER BY checks first key.
+12. Suggestion templates use **AVG** for rate/score measures instead of SUM.
 
 ---
 

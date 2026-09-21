@@ -43,9 +43,13 @@ def sandbox_executor_node(state: AgentState) -> Dict[str, Any]:
             from backend.services.sql.sql_quality_validator import validate_sql
             
             # Fetch schema for validation
-            schema = state.get("schema_profile", {})
+            schema = dict(state.get("schema_profile") or {})
             question = get_effective_question(state)
-            
+            table_name = state.get("duckdb_table") or dataset_id
+            if table_name:
+                schema.setdefault("dataset_id", table_name)
+                schema.setdefault("duckdb_table", table_name)
+
             validation = validate_sql(code, schema, question)
             
             if not validation["is_valid"]:
@@ -129,7 +133,12 @@ def sandbox_executor_node(state: AgentState) -> Dict[str, Any]:
                         "execution_success": False,
                         "execution_time_ms": execution_time_ms,
                         "output_summary": {"error": error_msg, "code_context": code},
-                        "failure_summary": None
+                        "failure_summary": {
+                            "failure_type": "runtime",
+                            "error_message": str(error_msg or "SQL execution failed"),
+                            "code_context": code,
+                            "expected_vs_actual": "DuckDB/Postgres rejected the SQL at runtime.",
+                        },
                     }
                 
         else:

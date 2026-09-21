@@ -112,6 +112,50 @@ class TestSQLQualityValidator(unittest.TestCase):
         result = validate_sql(query, question="top 5 categories by sales")
         self.assertTrue(result["is_valid"], result["diagnostics"])
 
+    def test_single_table_rejects_wrong_from_table(self):
+        schema = {
+            "dataset_id": "sales_ds",
+            "columns": [{"name": "sales_amount"}, {"name": "city"}],
+        }
+        query = (
+            'SELECT city, SUM(sales_amount) AS total '
+            'FROM wrong_table GROUP BY city'
+        )
+        result = validate_sql(query, schema=schema)
+        self.assertFalse(result["is_valid"], result["diagnostics"])
+        self.assertTrue(any("Invalid table reference" in c for c in result["critical_issues"]))
+
+    def test_window_aggregate_does_not_require_group_by(self):
+        schema = {
+            "dataset_id": "sales_ds",
+            "columns": [{"name": "city"}, {"name": "sales_amount"}, {"name": "category"}],
+        }
+        query = (
+            "SELECT city, SUM(sales_amount) OVER (PARTITION BY category) AS win_sales "
+            "FROM sales_ds"
+        )
+        result = validate_sql(query, schema=schema)
+        self.assertTrue(result["is_valid"], result["diagnostics"])
+        self.assertFalse(any("Missing GROUP BY" in c for c in result["critical_issues"]))
+
+    def test_multi_cte_table_refs_are_allowed(self):
+        schema = {
+            "dataset_id": "analytics_demo",
+            "columns": [{"name": "product_name"}, {"name": "revenue"}],
+        }
+        query = """
+        WITH grouped AS (
+          SELECT product_name AS dim, SUM(revenue) AS group_total
+          FROM analytics_demo GROUP BY 1
+        ), ranked AS (
+          SELECT dim, group_total FROM grouped
+        )
+        SELECT SUM(group_total) AS overall_total FROM ranked
+        """
+        result = validate_sql(query, schema=schema)
+        self.assertTrue(result["is_valid"], result["diagnostics"])
+        self.assertFalse(any("Invalid table reference" in c for c in result["critical_issues"]))
+
 
 if __name__ == "__main__":
     unittest.main()

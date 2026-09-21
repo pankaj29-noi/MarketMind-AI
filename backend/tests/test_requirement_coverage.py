@@ -263,3 +263,22 @@ def test_confidence_low_when_coverage_fails():
         )
         == "Low"
     )
+
+
+def test_segment_filter_rejects_wrong_segment_literal():
+    """SQL filtering Corporate must not satisfy a Consumer segment requirement."""
+    question = "What is total sales for the Consumer segment?"
+    wrong_sql = (
+        "SELECT SUM(sales_amount) AS total_sales FROM t "
+        "WHERE customer_segment = 'Corporate'"
+    )
+    ok, missing = check_requirement_coverage(question, wrong_sql, columns=None)
+    assert ok is False
+    assert any("segment=" in m.lower() or "consumer" in m.lower() for m in missing)
+
+    right_sql = (
+        "SELECT SUM(sales_amount) AS total_sales FROM t "
+        "WHERE customer_segment = 'Consumer'"
+    )
+    ok2, missing2 = check_requirement_coverage(question, right_sql, columns=None)
+    assert ok2 is True, missing2

@@ -56,7 +56,8 @@ _ALIAS_RE = re.compile(
     re.IGNORECASE,
 )
 _CTE_RE = re.compile(
-    r"\b(?:WITH|,)\s+(?:RECURSIVE\s+)?(?:\"([^\"]+)\"|([A-Za-z_][\w$]*))\s+AS\s*\(",
+    # Matches WITH cte AS (…), and subsequent CTEs: ), next_cte AS (
+    r"(?:\"([^\"]+)\"|([A-Za-z_][\w$]*))\s+AS\s*\(",
     re.IGNORECASE,
 )
 _FROM_ALIAS_RE = re.compile(
@@ -131,7 +132,8 @@ def _collect_query_aliases(query: str) -> Set[str]:
         alias = (m.group(3) or m.group(4) or "").lower()
         if table:
             aliases.add(table)
-        if alias:
+        # Do not treat SQL keywords (GROUP, WHERE, ORDER, …) as table aliases
+        if alias and alias not in _SQL_KEYWORDS:
             aliases.add(alias)
     return aliases
 
@@ -173,14 +175,28 @@ def find_unknown_column_references(query: str, schema: Dict[str, Any]) -> List[s
     }
     if schema.get("multi_table") and schema.get("tables"):
         known_tables = {(t.get("name") or "").lower() for t in schema["tables"] if t.get("name")}
+    else:
+        # Single-table CSV uploads: only the registered dataset table is valid.
+        for key in ("dataset_id", "table_name", "duckdb_table"):
+            name = (schema.get(key) or "").strip().lower()
+            if name:
+                known_tables.add(name)
 
     issues: List[str] = []
     seen: Set[str] = set()
 
-    if schema.get("multi_table") and known_tables:
+    cte_names = {
+        (m.group(1) or m.group(2) or "").lower()
+        for m in _CTE_RE.finditer(query)
+        if (m.group(1) or m.group(2))
+    }
+
+    if known_tables:
         for m in _FROM_ALIAS_RE.finditer(query):
             table = (m.group(1) or m.group(2) or "").lower()
-            if table and table not in known_tables and table not in aliases:
+            # Compare against known tables / CTEs only — FROM table names are also
+            # present in `aliases`, so do not use aliases to skip this check.
+            if table and table not in known_tables and table not in cte_names:
                 key = f"table:{table}"
                 if key not in seen:
                     seen.add(key)
@@ -357,18 +373,31 @@ def validate_sql(query: str, schema: Dict[str, Any] = None, question: str = "") 
     # Keep upper form for remaining quality checks (use original query for regex on mixed case)
     # Re-bind query_upper to the full original upper for SELECT * / GROUP BY heuristics
     query_upper = query.upper()
+    # Window aggregates (SUM(...) OVER (...)) are not GROUP BY aggregates.
+    query_upper_no_windows = re.sub(
+        r"\b(SUM|AVG|COUNT|MIN|MAX)\s*\([^)]*\)\s+OVER\s*\([^)]*\)",
+        " WINDOW_AGG ",
+        query_upper,
+        flags=re.IGNORECASE,
+    )
 
     # 1. Misuse of SELECT *
     if re.search(r"SELECT\s+\*\s+FROM", query_upper) or re.search(r"SELECT\s+.*,\s*\*\s+FROM", query_upper):
         critical_issues.append("Misuse of SELECT * when only a subset of fields is required.")
 
     # 2. Missing GROUP BY when required
-    has_aggregate = bool(re.search(_AGG_FUNC_RE, query_upper))
+    has_aggregate = bool(re.search(_AGG_FUNC_RE, query_upper_no_windows))
     if has_aggregate and "GROUP BY" not in query_upper:
         select_clause_match = re.search(r"SELECT\s+(.*?)\s+FROM", query, re.IGNORECASE | re.DOTALL)
         if select_clause_match:
             select_clause = select_clause_match.group(1)
-            top_level_exprs = split_top_level(select_clause, ',')
+            select_clause_plain = re.sub(
+                r"\b(SUM|AVG|COUNT|MIN|MAX)\s*\([^)]*\)\s+OVER\s*\([^)]*\)",
+                " WINDOW_AGG ",
+                select_clause,
+                flags=re.IGNORECASE,
+            )
+            top_level_exprs = split_top_level(select_clause_plain, ',')
             
             has_non_agg = False
             for expr in top_level_exprs:
@@ -377,7 +406,7 @@ def validate_sql(query: str, schema: Dict[str, Any] = None, question: str = "") 
                     cleaned = re.sub(r"\bAS\s+(?:\"[^\"]*\"|'[^']*'|[\w]+)", "", expr, flags=re.IGNORECASE)
                     cleaned = re.sub(r"'[^']*'", "", cleaned)
                     cleaned = re.sub(r"\b\d+(\.\d+)?\b", "", cleaned)
-                    cleaned = re.sub(r"\b(NULL|DISTINCT)\b", "", cleaned, flags=re.IGNORECASE)
+                    cleaned = re.sub(r"\b(NULL|DISTINCT|WINDOW_AGG)\b", "", cleaned, flags=re.IGNORECASE)
                     cleaned = re.sub(r"[\s,;+\-*/=<>]+", "", cleaned)
                     if cleaned:
                         has_non_agg = True
@@ -398,10 +427,12 @@ def validate_sql(query: str, schema: Dict[str, Any] = None, question: str = "") 
         if not has_limit and not has_window_topn:
             critical_issues.append("Missing LIMIT for Top/Bottom N queries.")
 
-    # 4. Incorrect ORDER BY direction
+    # 4. Incorrect ORDER BY direction (first sort key only)
     if "ORDER BY" in query_upper:
-        order_by_clause = query_upper.split("ORDER BY")[1]
-        is_desc = "DESC" in order_by_clause
+        order_tail = query_upper.split("ORDER BY", 1)[1]
+        order_primary = re.split(r"\bLIMIT\b|\bOFFSET\b|;", order_tail, maxsplit=1)[0]
+        first_key = order_primary.split(",")[0].strip()
+        is_desc = bool(re.search(r"\bDESC\b", first_key))
         if re.search(r"\b(highest|top|most|largest|max)\b", question_lower):
             if not is_desc:
                 critical_issues.append("Incorrect ORDER BY direction: Expected DESC for 'highest'/'top' intent.")

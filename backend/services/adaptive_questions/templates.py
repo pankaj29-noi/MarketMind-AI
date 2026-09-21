@@ -118,6 +118,15 @@ def generate_candidates(
     for measure in measures[:3]:
         mlabel = _human(measure)
         mconf = conf_map.get(measure, 0.75)
+        # Rates/ratios should AVG; additive measures should SUM.
+        m_sem = sem_by.get(measure)
+        m_low = measure.lower()
+        use_avg = bool(
+            (m_sem and getattr(m_sem, "semantic_type", "") in {"rate_measure", "ratio_measure"})
+            or any(tok in m_low for tok in ("rate", "ratio", "percent", "pct", "margin", "score"))
+        )
+        agg_fn = "AVG" if use_avg else "SUM"
+        agg_alias = f"{'avg' if use_avg else 'total'}_{measure}"
         for dim in dimensions[:3]:
             dlabel = _human(dim)
             dconf = min(mconf, conf_map.get(dim, 0.75))
@@ -130,10 +139,10 @@ def generate_candidates(
                     intent="top_group_by_measure",
                     proof_sql=(
                         f"SELECT {_ident(dim)} AS {_ident(dim)}, "
-                        f"SUM({_ident(measure)}) AS total_{measure} "
+                        f"{agg_fn}({_ident(measure)}) AS {agg_alias} "
                         f"FROM {table} WHERE {_ident(dim)} IS NOT NULL "
                         f"GROUP BY {_ident(dim)} "
-                        f"ORDER BY total_{measure} DESC LIMIT 1"
+                        f"ORDER BY {agg_alias} DESC LIMIT 1"
                     ),
                     confidence=dconf,
                     columns_used=[dim, measure],
@@ -148,10 +157,10 @@ def generate_candidates(
                     intent="bottom_group_by_measure",
                     proof_sql=(
                         f"SELECT {_ident(dim)} AS {_ident(dim)}, "
-                        f"SUM({_ident(measure)}) AS total_{measure} "
+                        f"{agg_fn}({_ident(measure)}) AS {agg_alias} "
                         f"FROM {table} WHERE {_ident(dim)} IS NOT NULL "
                         f"GROUP BY {_ident(dim)} "
-                        f"ORDER BY total_{measure} ASC LIMIT 1"
+                        f"ORDER BY {agg_alias} ASC LIMIT 1"
                     ),
                     confidence=dconf,
                     columns_used=[dim, measure],
@@ -166,10 +175,10 @@ def generate_candidates(
                     intent="group_by_measure",
                     proof_sql=(
                         f"SELECT {_ident(dim)} AS {_ident(dim)}, "
-                        f"SUM({_ident(measure)}) AS total_{measure} "
+                        f"{agg_fn}({_ident(measure)}) AS {agg_alias} "
                         f"FROM {table} WHERE {_ident(dim)} IS NOT NULL "
                         f"GROUP BY {_ident(dim)} "
-                        f"ORDER BY total_{measure} DESC LIMIT 25"
+                        f"ORDER BY {agg_alias} DESC LIMIT 25"
                     ),
                     confidence=dconf,
                     columns_used=[dim, measure],
@@ -184,10 +193,10 @@ def generate_candidates(
                     intent="top_n_by_measure",
                     proof_sql=(
                         f"SELECT {_ident(dim)} AS {_ident(dim)}, "
-                        f"SUM({_ident(measure)}) AS total_{measure} "
+                        f"{agg_fn}({_ident(measure)}) AS {agg_alias} "
                         f"FROM {table} WHERE {_ident(dim)} IS NOT NULL "
                         f"GROUP BY {_ident(dim)} "
-                        f"ORDER BY total_{measure} DESC LIMIT 5"
+                        f"ORDER BY {agg_alias} DESC LIMIT 5"
                     ),
                     confidence=dconf,
                     columns_used=[dim, measure],

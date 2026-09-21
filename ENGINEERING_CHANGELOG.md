@@ -4,6 +4,20 @@ Every logical fix from the autonomous audit → fix → test → verify loop.
 
 ---
 
+## 2026-09-22 — accuracy follow-up (SQL pipeline audit)
+
+**fix: close single-table FROM hallucination, segment filter false-pass, empty/fallback SQL gaps**
+
+| | |
+|---|---|
+| **Problem** | Wrong `FROM` table passed single-table validation; Consumer filter accepted Corporate SQL; demo/fallback SQL skipped schema validation; empty LLM SQL marked success; multi-CTE (`), ranked AS`) false-rejected. |
+| **Root cause** | FROM tables were added to alias allowlist before table checks; segment regex missed “for the X segment”; fallback paths only ran coverage; CTE regex required `WITH|,` immediately before name. |
+| **Solution** | Validate single-table FROM against dataset_id/CTEs; tighten segment extraction; `_accept_fallback_sql` + empty-SQL failure; fix multi-CTE detection; window AGG ignores OVER; ORDER BY first key; rate measures AVG in suggestions. |
+| **Tests** | Full suite green after CTE fix. New unit tests for wrong FROM, window SQL, segment mismatch, multi-CTE. |
+| **Deploy** | Follow-up push to `main`. |
+
+---
+
 ## 2026-09-22 — final full recheck
 
 **fix: close SQL/Python filesystem escapes, harden CSV prompt injection, isolate test rate limits, shrink initial frontend bundle**

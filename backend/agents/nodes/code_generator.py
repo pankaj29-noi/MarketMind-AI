@@ -426,6 +426,32 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
             if hit is not None:
                 return hit
 
+    def _accept_fallback_sql(sql: str, *, reason_tag: str):
+        """Require coverage + schema validation before accepting deterministic fallback SQL."""
+        from backend.services.sql.sql_quality_validator import validate_sql as _vs_fb
+
+        ok_fb, miss_fb = check_requirement_coverage(question, sql, columns=None)
+        schema_for_fb = dict(schema_profile or {})
+        if table_name and not schema_for_fb.get("dataset_id"):
+            schema_for_fb["dataset_id"] = table_name
+        _vf = _vs_fb(sql, schema_for_fb, question)
+        if not (ok_fb and _vf.get("is_valid")):
+            logger.warning(
+                "Fallback SQL rejected (%s): coverage_ok=%s schema_ok=%s miss=%s diag=%s",
+                reason_tag,
+                ok_fb,
+                bool(_vf.get("is_valid")),
+                miss_fb,
+                _vf.get("diagnostics"),
+            )
+            return None
+        return _finish(
+            sql,
+            source=ANALYSIS_SOURCE_FALLBACK,
+            precheck_ok=True,
+            precheck_missing=[],
+        )
+
     # DEMO MODE: try deterministic schema-aware SQL when no generative path remains.
     if approach == "sql" and use_analytics_demo_fallback():
         fallback = resolve_analytics_fallback(question, schema_profile or {}, dataset_id)
@@ -433,13 +459,9 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
             logger.warning(
                 "Analytics DEMO MODE — using deterministic SQL fallback (skipping LLM)."
             )
-            ok_fb, miss_fb = check_requirement_coverage(question, fallback.sql, columns=None)
-            return _finish(
-                fallback.sql,
-                source=ANALYSIS_SOURCE_FALLBACK,
-                precheck_ok=ok_fb,
-                precheck_missing=miss_fb,
-            )
+            accepted = _accept_fallback_sql(fallback.sql, reason_tag="demo_mode")
+            if accepted is not None:
+                return accepted
         logger.warning(
             "Analytics DEMO MODE — no deterministic SQL for question (reason=%s).",
             fallback.reason,
@@ -469,13 +491,9 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
                 "SQLCoder did not yield validated SQL and no API LLM key is set — "
                 "using deterministic fallback."
             )
-            ok_fb, miss_fb = check_requirement_coverage(question, fallback.sql, columns=None)
-            return _finish(
-                fallback.sql,
-                source=ANALYSIS_SOURCE_FALLBACK,
-                precheck_ok=ok_fb,
-                precheck_missing=miss_fb,
-            )
+            accepted = _accept_fallback_sql(fallback.sql, reason_tag="no_api_key")
+            if accepted is not None:
+                return accepted
         return _finish(
             "",
             source=ANALYSIS_SOURCE_FALLBACK,
@@ -659,6 +677,21 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
             )
 
         generated_code = code
+        if approach == "sql" and not (generated_code or "").strip():
+            logger.warning("LLM returned empty SQL — treating as generation failure.")
+            return _finish(
+                "",
+                source=source,
+                provider=provider,
+                model=model,
+                failed=True,
+                failure={
+                    "failure_type": "empty_sql",
+                    "error_message": "Code generator returned empty SQL.",
+                    "code_context": "",
+                    "expected_vs_actual": "non-empty SELECT required",
+                },
+            )
         logger.info(
             "Generated %s code successfully via %s (%s).",
             approach.upper(),
@@ -706,15 +739,9 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
                 logger.warning(
                     "LLM provider unavailable — using deterministic analytics fallback."
                 )
-                ok_fb, miss_fb = check_requirement_coverage(
-                    question, fallback.sql, columns=None
-                )
-                return _finish(
-                    fallback.sql,
-                    source=ANALYSIS_SOURCE_FALLBACK,
-                    precheck_ok=ok_fb,
-                    precheck_missing=miss_fb,
-                )
+                accepted = _accept_fallback_sql(fallback.sql, reason_tag="provider_error")
+                if accepted is not None:
+                    return accepted
             return _finish(
                 "",
                 source=ANALYSIS_SOURCE_FALLBACK,
