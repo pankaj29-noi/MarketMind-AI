@@ -603,6 +603,11 @@ def _columns_from_schema(schema_profile: Dict[str, Any], dataset_id: str) -> Tup
     return str(table), names
 
 
+# Pattern ids whose SQL encodes a question shape the generic resolver would answer
+# differently (and therefore wrongly).
+_PRECISE_PATTERN_IDS = frozenset({"PERCENT_OF_TOTAL_TOP_N"})
+
+
 def resolve_analytics_fallback(
     question: str,
     schema_profile: Optional[Dict[str, Any]],
@@ -624,6 +629,17 @@ def resolve_analytics_fallback(
         if is_marketplace_dataset(dataset_id):
             return resolve_marketplace_fallback(question)
         return FallbackResult(None, "ambiguous", ANALYSIS_SOURCE_FALLBACK)
+
+    # The pattern library carries analytically specific templates (percent of total over
+    # top-N, etc.) whose shape the generic single-table resolver cannot express. Consult
+    # it first so a percentage question is never answered with a plain ranking.
+    from backend.services.sql.sql_pattern_library import try_simple_deterministic_sql
+
+    pattern_columns = [c if isinstance(c, dict) else {"name": str(c)} for c in (schema_profile.get("columns") or [])]
+    if pattern_columns:
+        hit = try_simple_deterministic_sql(question, table, pattern_columns)
+        if hit and hit.sql and hit.pattern_id in _PRECISE_PATTERN_IDS:
+            return FallbackResult(hit.sql, hit.pattern_id.lower(), ANALYSIS_SOURCE_FALLBACK)
 
     roles = map_columns(table, columns)
     return _single_table_sql(question, roles)

@@ -37,6 +37,71 @@ def _limit(q: str, default: int = 10) -> int:
     return default
 
 
+def _singular(word: str) -> str:
+    w = word.lower()
+    if w.endswith("ies") and len(w) > 4:
+        return w[:-3] + "y"
+    if w.endswith("ses") and len(w) > 4:
+        return w[:-2]
+    if w.endswith("s") and not w.endswith("ss") and len(w) > 3:
+        return w[:-1]
+    return w
+
+
+def _question_tokens(question: str) -> set[str]:
+    tokens = set()
+    for raw in re.findall(r"[a-z0-9_]+", (question or "").lower()):
+        tokens.add(raw)
+        tokens.add(_singular(raw))
+        for part in raw.split("_"):
+            if part:
+                tokens.add(part)
+                tokens.add(_singular(part))
+    return tokens
+
+
+def resolve_column(question: str, candidates: Sequence[str]) -> Optional[str]:
+    """Pick the column a question refers to, or None when the evidence is weak.
+
+    Matching is name-evidence only: full name, name with separators as spaces, or
+    the distinctive tokens of the name (product_name -> "product"/"products").
+    Returns None rather than guessing when two candidates tie.
+    """
+    q = (question or "").lower()
+    tokens = _question_tokens(q)
+    scored: List[Tuple[int, str]] = []
+    for name in candidates:
+        if not name:
+            continue
+        lower = name.lower()
+        spaced = lower.replace("_", " ")
+        score = 0
+        if lower in q or spaced in q:
+            score = 100 + len(lower)
+        else:
+            parts = [p for p in lower.split("_") if p]
+            matched = [p for p in parts if p in tokens or _singular(p) in tokens]
+            leftover = {p for p in parts if p not in matched}
+            if matched and not leftover:
+                score = 80
+            elif matched and leftover == {"name"}:
+                # "top 10 products" means the product label column, not a product attribute.
+                score = 70
+            elif matched and leftover == {"id"}:
+                score = 45
+            elif matched:
+                # Partial name match ("product" for product_category) is weaker but usable.
+                score = 40 + 10 * len(matched)
+        if score:
+            scored.append((score, name))
+    if not scored:
+        return None
+    scored.sort(key=lambda s: (-s[0], len(s[1])))
+    if len(scored) > 1 and scored[0][0] == scored[1][0]:
+        return None  # ambiguous — let the caller decide rather than guess
+    return scored[0][1]
+
+
 def detect_patterns(question: str) -> List[str]:
     q = (question or "").lower()
     hits: List[str] = []
@@ -118,6 +183,56 @@ def try_simple_deterministic_sql(
             validation_rules=["non_empty"],
         )
 
+    cats = [
+        c.get("name")
+        for c in columns
+        if c.get("name")
+        and c.get("analytical_role") in ("categorical", "temporal", None)
+        and c.get("name") not in numeric
+    ]
+
+    # Percent of total contributed by a top-N subset.
+    # Denominator must be the overall total, not the top-N subtotal.
+    if (
+        re.search(r"\b(percent(age)?|share|%|contribution)\b", q)
+        and re.search(r"\btop\s+\d+\b", q)
+        and numeric
+    ):
+        measure = resolve_column(q, numeric) or (numeric[0] if len(numeric) == 1 else None)
+        dim = resolve_column(q, [c for c in cats if c])
+        if measure and dim:
+            lim = _limit(q)
+            m_id, d_id = _ident(measure), _ident(dim)
+            return PatternMatch(
+                "PERCENT_OF_TOTAL_TOP_N",
+                0.88,
+                sql=(
+                    f"WITH grouped AS (\n"
+                    f"  SELECT {d_id} AS dim, SUM({m_id}) AS group_total\n"
+                    f"  FROM {tbl}\n"
+                    f"  WHERE {m_id} IS NOT NULL\n"
+                    f"  GROUP BY 1\n"
+                    f"), ranked AS (\n"
+                    f"  SELECT dim, group_total,\n"
+                    f"         ROW_NUMBER() OVER (ORDER BY group_total DESC) AS rn\n"
+                    f"  FROM grouped\n"
+                    f")\n"
+                    f"SELECT\n"
+                    f"  SUM(CASE WHEN rn <= {lim} THEN group_total ELSE 0 END) AS top_{lim}_total,\n"
+                    f"  SUM(group_total) AS overall_total,\n"
+                    f"  ROUND(100.0 * SUM(CASE WHEN rn <= {lim} THEN group_total ELSE 0 END)\n"
+                    f"        / NULLIF(SUM(group_total), 0), 2) AS pct_of_total\n"
+                    f"FROM ranked"
+                ),
+                validation_rules=[
+                    "exactly_one_row",
+                    "percent_bounds_0_100",
+                    "column:pct_of_total",
+                    "denominator:overall_total",
+                ],
+                reason=f"percent of total {measure} from top {lim} {dim}",
+            )
+
     # Sum / avg / min / max of a named column
     for agg, words in (
         ("SUM", r"\b(sum|total)\s+(?:of\s+)?([a-z0-9_]+)"),
@@ -193,18 +308,15 @@ def try_simple_deterministic_sql(
                 break
         if measure is None and len(numeric) == 1:
             measure = numeric[0]
+        if measure is None:
+            measure = resolve_column(q, numeric)
         dim = None
-        cats = [
-            c.get("name")
-            for c in columns
-            if c.get("name")
-            and c.get("analytical_role") in ("categorical", "temporal", None)
-            and c.get("name") not in numeric
-        ]
         for cname in cats:
             if cname and cname.lower() in q:
                 dim = cname
                 break
+        if dim is None:
+            dim = resolve_column(q, [c for c in cats if c])
         if measure and dim:
             return PatternMatch(
                 "TOP_N",

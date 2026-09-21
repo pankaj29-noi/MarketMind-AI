@@ -811,7 +811,11 @@ def _has_dimension_coverage(
         return has(r"\bsales_channel\b", r"\bchannel\b") and (
             "group by" in sql_l or any("channel" in c for c in cols_l)
         )
-    return has(rf"\b{re.escape(dim)}\b") and (
+    # A dimension is covered by its own name or by a qualified column built from it
+    # (product -> product_name, region -> customer_region). \bproduct\b alone misses
+    # product_name because "_" is a word character.
+    esc = re.escape(dim)
+    return has(rf"\b{esc}s?\b", rf"\b{esc}_[a-z_]+\b", rf"\b[a-z_]+_{esc}\b") and (
         "group by" in sql_l or any(dim in c for c in cols_l)
     )
 
@@ -1068,7 +1072,31 @@ def check_requirement_coverage(
                 "required time grouping missing (order_date month/quarter/period)"
             )
 
-    # 10. Predictive / causal questions are outside descriptive analytics support
+    # 10. Percent-of-total questions must actually return a proportion.
+    # A ranking that lists the top-N rows answers a different question.
+    asks_percent_of_total = bool(
+        re.search(
+            r"\b(what\s+)?(percent(age)?|share|proportion|%)\b[^.?]{0,40}"
+            r"\b(of|from)\b[^.?]{0,20}\b(total|overall|all)\b",
+            q,
+        )
+        or re.search(r"\b(percent(age)?|share|proportion)\s+of\s+total\b", q)
+    )
+    if asks_percent_of_total:
+        has_ratio_sql = bool(
+            re.search(r"/\s*(nullif\s*\()?\s*(sum|count|total)", sql_l)
+            or re.search(r"\bratio_to_report\b|\bover\s*\(\s*\)", sql_l)
+        )
+        has_percent_column = any(
+            re.search(r"pct|percent|share|proportion|ratio", c) for c in cols_l
+        )
+        if not (has_ratio_sql or has_percent_column):
+            missing.append(
+                "percent of total missing: the result must contain a proportion "
+                "(value / overall total), not just a ranking of top rows"
+            )
+
+    # 11. Predictive / causal questions are outside descriptive analytics support
     if "unsupported_predictive_or_causal" in req.requested_conclusions:
         missing.append(
             "unsupported question: predictive/causal analysis is not available "
