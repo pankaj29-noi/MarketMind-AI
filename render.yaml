@@ -21,7 +21,7 @@ services:
       - key: GROQ_MODEL
         value: openai/gpt-oss-120b
       - key: GEMINI_FALLBACK_MODEL
-        value: gemini-2.0-flash
+        value: gemini-3.6-flash
       - key: SANDBOX_TIMEOUT_SECONDS
         value: "10"
       - key: SANDBOX_MEMORY_LIMIT_MB

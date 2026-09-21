@@ -24,6 +24,26 @@ def is_provider_auth_or_config_error(error_message: str) -> bool:
     return any(m in text for m in markers)
 
 
+def is_rate_limit_error(error_message: str) -> bool:
+    """True when the provider rejected the request for quota/rate reasons."""
+    text = (error_message or "").lower()
+    markers = ("429", "rate limit", "rate_limit", "resource_exhausted", "quota")
+    return any(m in text for m in markers)
+
+
+def is_model_unavailable_error(error_message: str) -> bool:
+    """True when the model id itself is gone (retired/no access), so retrying is pointless."""
+    text = (error_message or "").lower()
+    markers = (
+        "model_not_found",
+        "does not exist",
+        "no longer available",
+        "not found",
+        "404",
+    )
+    return any(m in text for m in markers)
+
+
 def provider_error_user_message(error_message: str) -> str:
     """Safe, actionable message for the System Failure Report UI."""
     if is_provider_auth_or_config_error(error_message):

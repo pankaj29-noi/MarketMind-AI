@@ -72,7 +72,11 @@ def requirement_parser_node(state: LeadAgentState) -> Dict[str, Any]:
         }
 
     from backend.config import has_valid_llm_api_key, use_lead_demo_extraction
-    from backend.marketplace.lead.demo_extractor import extract_requirement_demo
+    from backend.marketplace.lead.demo_extractor import (
+        EXTRACTION_SOURCE_DEMO,
+        extract_requirement_demo,
+    )
+    from backend.utils.provider_errors import provider_error_user_message
 
     # DEMO MODE: deterministic extractor when no valid Groq key (NOT an LLM).
     if use_lead_demo_extraction():
@@ -142,10 +146,32 @@ def requirement_parser_node(state: LeadAgentState) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.error("Requirement parser failed: %s", e)
+        # Provider outage or quota exhaustion must not sink the whole workflow when a
+        # deterministic extractor can still read the requirement.
+        demo = extract_requirement_demo(text)
+        if demo:
+            logger.warning(
+                "LLM extraction unavailable (%s); degraded to the deterministic extractor.",
+                provider_error_user_message(str(e)),
+            )
+            extracted = ExtractedRequirement.model_validate(demo)
+            if extracted.city and not extracted.state:
+                mapped = CITY_STATE_MAP.get(extracted.city.strip().lower())
+                if mapped:
+                    extracted.state = mapped
+            data = extracted.model_dump()
+            data["extraction_source"] = EXTRACTION_SOURCE_DEMO
+            data["degraded_from_llm"] = True
+            return {
+                "extracted_requirement": data,
+                "workflow_status": "running",
+                "error": None,
+                "stop_reason": None,
+            }
         return {
             "extracted_requirement": None,
             "workflow_status": "failed",
-            "error": f"Failed to extract requirement: {e}",
+            "error": f"Failed to extract requirement: {provider_error_user_message(str(e))}",
             "stop_reason": "extraction_failed",
         }
 

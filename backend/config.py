@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -36,22 +37,35 @@ _PLACEHOLDER_KEY_FRAGMENTS = (
 
 # Groq retired llama-3.3-70b-versatile (Aug 2026). Prefer current production IDs.
 DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b"
-DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
+# Verified reachable 2026-09-21. Models that answer 404 are listed as retired below so
+# the fallback chain never spends a round-trip on them.
+GROQ_MODEL_CANDIDATES = (
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+)
 GEMINI_MODEL_CANDIDATES = (
-    "gemini-2.0-flash",
     "gemini-3.6-flash",
-    "gemini-1.5-flash",
     "gemini-flash-latest",
 )
 _RETIRED_GROQ_MODELS = {
     "llama-3.3-70b-versatile",
     "llama-3.1-8b-instant",
     "llama-3.1-70b-versatile",
+    "qwen/qwen3.6-27b",
 }
 _RETIRED_GEMINI_MODELS = {
     "gemini-2.5-flash",
     "gemini-2.5-pro",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
 }
+
+# LLM call budget. A healthy provider answers in ~0.3-1.5s; anything beyond these
+# bounds is retry/backoff against a degraded provider and must not block a request.
+LLM_REQUEST_TIMEOUT_SECONDS = float(os.getenv("LLM_REQUEST_TIMEOUT_SECONDS", "20"))
+LLM_CHAIN_DEADLINE_SECONDS = float(os.getenv("LLM_CHAIN_DEADLINE_SECONDS", "45"))
+LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "0"))
 
 
 def _is_placeholder_key(value: str | None) -> bool:
@@ -255,6 +269,8 @@ def _build_groq(temperature: float, model: str | None = None):
         api_key=GROQ_API_KEY,
         model_name=model or GROQ_MODEL,
         temperature=temperature,
+        timeout=LLM_REQUEST_TIMEOUT_SECONDS,
+        max_retries=LLM_MAX_RETRIES,
     )
 
 
@@ -265,6 +281,8 @@ def _build_gemini(temperature: float, model: str | None = None):
         api_key=GOOGLE_API_KEY,
         model=model or GEMINI_FALLBACK_MODEL,
         temperature=temperature,
+        timeout=LLM_REQUEST_TIMEOUT_SECONDS,
+        max_retries=LLM_MAX_RETRIES,
     )
 
 
@@ -293,50 +311,64 @@ def invoke_llm(messages, temperature: float = 0.0) -> dict:
     Returns: {content, provider, model, analysis_source}
     analysis_source is 'groq' | 'gemini'.
     """
+    from backend.utils.provider_errors import is_model_unavailable_error
+
     errors: list[str] = []
+    deadline = time.monotonic() + LLM_CHAIN_DEADLINE_SECONDS
+
+    def _dedupe(*models: str) -> list[str]:
+        seen: list[str] = []
+        for m in models:
+            if m and m not in seen and m not in _RETIRED_GROQ_MODELS and m not in _RETIRED_GEMINI_MODELS:
+                seen.append(m)
+        return seen
+
+    def _try(provider: str, models: list[str], build, source: str):
+        for model in models:
+            if time.monotonic() >= deadline:
+                errors.append(f"{source}[{model}]:skipped, chain deadline exceeded")
+                logger.warning(
+                    "LLM chain deadline (%.0fs) exceeded; skipping remaining candidates.",
+                    LLM_CHAIN_DEADLINE_SECONDS,
+                )
+                return None
+            try:
+                resp = build(temperature, model=model).invoke(messages)
+                content = getattr(resp, "content", None) or str(resp)
+                logger.info("LLM invocation succeeded via %s model=%s", provider, model)
+                return {
+                    "content": content,
+                    "provider": provider,
+                    "model": model,
+                    "analysis_source": source,
+                }
+            except Exception as exc:
+                errors.append(f"{source}[{model}]:{exc}")
+                if is_model_unavailable_error(str(exc)):
+                    logger.warning(
+                        "%s model %s is unavailable (retired or no access) — consider removing it "
+                        "from the candidate list.",
+                        provider,
+                        model,
+                    )
+                else:
+                    logger.warning("%s model %s failed; trying next candidate.", provider, model)
+        return None
 
     if has_valid_groq_key():
-        for model in (GROQ_MODEL, DEFAULT_GROQ_MODEL, "qwen/qwen3.6-27b", "openai/gpt-oss-20b"):
-            # de-dupe while preserving order
-            pass
-        groq_models = []
-        for model in (GROQ_MODEL, DEFAULT_GROQ_MODEL, "qwen/qwen3.6-27b", "openai/gpt-oss-20b"):
-            if model and model not in groq_models:
-                groq_models.append(model)
-        for model in groq_models:
-            try:
-                resp = _build_groq(temperature, model=model).invoke(messages)
-                content = getattr(resp, "content", None) or str(resp)
-                logger.info("LLM invocation succeeded via Groq model=%s", model)
-                return {
-                    "content": content,
-                    "provider": "Groq",
-                    "model": model,
-                    "analysis_source": "groq",
-                }
-            except Exception as exc:
-                errors.append(f"groq[{model}]:{exc}")
-                logger.warning("Groq model %s failed; trying next candidate.", model)
+        result = _try("Groq", _dedupe(GROQ_MODEL, *GROQ_MODEL_CANDIDATES), _build_groq, "groq")
+        if result:
+            return result
 
     if has_valid_gemini_key():
-        gemini_models = []
-        for model in (GEMINI_FALLBACK_MODEL, *GEMINI_MODEL_CANDIDATES):
-            if model and model not in gemini_models:
-                gemini_models.append(model)
-        for model in gemini_models:
-            try:
-                resp = _build_gemini(temperature, model=model).invoke(messages)
-                content = getattr(resp, "content", None) or str(resp)
-                logger.info("LLM invocation succeeded via Gemini model=%s", model)
-                return {
-                    "content": content,
-                    "provider": "Gemini",
-                    "model": model,
-                    "analysis_source": "gemini",
-                }
-            except Exception as exc:
-                errors.append(f"gemini[{model}]:{exc}")
-                logger.warning("Gemini model %s failed; trying next candidate.", model)
+        result = _try(
+            "Gemini",
+            _dedupe(GEMINI_FALLBACK_MODEL, *GEMINI_MODEL_CANDIDATES),
+            _build_gemini,
+            "gemini",
+        )
+        if result:
+            return result
 
     detail = " | ".join(errors) if errors else "no providers configured"
     raise RuntimeError(f"All LLM providers failed: {detail}")
