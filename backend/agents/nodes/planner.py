@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from typing import Dict, Any, List, Optional
 from backend.agents.state import AgentState, get_effective_question
 from backend.config import use_analytics_demo_fallback, invoke_llm
@@ -144,10 +145,17 @@ def planner_node(state: AgentState) -> Dict[str, Any]:
         # Keep a generic inspect step first for demo clarity
         if not any("schema" in s.lower() or "inspect" in s.lower() for s in steps):
             steps = ["Inspect available DuckDB schema and columns"] + steps
+        wants_chart = bool(
+            re.search(
+                r"\b(chart|graph|plot|visuali[sz]e|bar chart|line chart)\b",
+                question or "",
+                re.IGNORECASE,
+            )
+        )
         return {
             "steps": steps,
             "approach": "sql",
-            "expected_output_type": "dataframe",
+            "expected_output_type": "chart" if wants_chart else "dataframe",
             "planning_source": "deterministic_fallback",
         }
 
@@ -220,23 +228,34 @@ def planner_node(state: AgentState) -> Dict[str, Any]:
             },
         )
 
-    # FAST PATH: marketplace multi-table OR SIMPLE → deterministic plan (0 planner LLM).
+    # FAST PATH: marketplace OR first-pass CSV/chart → deterministic plan (0 planner LLM).
     schema_profile = state.get("schema_profile") or {}
     _is_marketplace = bool(schema_profile.get("multi_table")) or (
         str(state.get("dataset_id") or "") == "marketplace"
     )
+    wants_chart = bool(
+        re.search(
+            r"\b(chart|graph|plot|visuali[sz]e|bar chart|line chart)\b",
+            question or "",
+            re.IGNORECASE,
+        )
+    )
     if _is_marketplace or (
         retry_count == 0
-        and complexity == "SIMPLE"
         and not use_analytics_demo_fallback()
+        and (complexity == "SIMPLE" or wants_chart or complexity in {"MEDIUM", "COMPLEX"})
     ):
         logger.info(
             "Planner fast-path: deterministic plan for %s.",
-            "marketplace" if _is_marketplace else "SIMPLE",
+            "marketplace"
+            if _is_marketplace
+            else ("chart" if wants_chart else complexity),
         )
         plan_data = _demo_sql_plan()
         plan_data["planning_source"] = (
-            "marketplace_fast_path" if _is_marketplace else "simple_fast_path"
+            "marketplace_fast_path"
+            if _is_marketplace
+            else ("chart_fast_path" if wants_chart else "simple_fast_path")
         )
         plan_data, ok_pc, miss_pc, failure = _ensure_plan_semantically_complete(
             plan_data, allow_repair=True

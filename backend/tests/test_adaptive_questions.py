@@ -136,7 +136,7 @@ def test_answerable_mix_includes_verified_tiers_only():
     result = generate_suggested_questions(session_id, dataset_id, count=10)
     assert result["questions"]
     assert 5 <= len(result["questions"]) <= 10
-    assert result.get("generation_version", "").startswith("v4")
+    assert result.get("generation_version", "").startswith("v5")
     tiers = {t["tier"] for t in result["tiers"]}
     assert tiers <= {"quick", "analytics", "advanced"}
     assert "expert" not in tiers
@@ -195,7 +195,7 @@ def test_each_displayed_question_executes_on_duckdb():
     profile = profile_dataset(session_id, dataset_id)
     for q in result["questions"]:
         sql = _resolve_production_sql(profile, q["text"])
-        assert sql, q["text"]
+        assert sql, f"production SQL missing for: {q['text']}"
         res = run_query(session_id, dataset_id, sql)
         assert res.get("success"), (q["text"], res.get("error"))
         cand = QuestionCandidate(
@@ -207,6 +207,7 @@ def test_each_displayed_question_executes_on_duckdb():
             proof_sql=sql,
             confidence=1.0,
             columns_used=list(q.get("required_columns") or []),
+            wants_chart=bool(q.get("wants_chart")),
         )
         ok, reason = validate_candidate(session_id, profile, cand)
         assert ok, (q["text"], reason)

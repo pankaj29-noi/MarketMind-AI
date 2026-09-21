@@ -54,18 +54,30 @@ def _resolve_production_sql(
 ) -> Optional[str]:
     """
     Resolve NL→SQL the same way /analyze prefers before calling LLM/SQLCoder:
-    pattern library, then analytics fallback.
+    pattern library, then analytics fallback. Prefer coverage-valid SQL.
     """
     from backend.services.analytics_fallback import resolve_analytics_fallback
+    from backend.services.requirement_coverage import check_requirement_coverage
     from backend.services.sql.sql_pattern_library import try_simple_deterministic_sql
 
     cols = _column_dicts(profile)
     hit = try_simple_deterministic_sql(question, profile.table, cols)
     if hit and hit.sql:
-        return hit.sql.strip()
+        ok, _ = check_requirement_coverage(question, hit.sql, columns=None)
+        if ok:
+            return hit.sql.strip()
 
     schema = _schema_profile_for_codegen(profile)
     fb = resolve_analytics_fallback(question, schema, profile.dataset_id)
+    if fb.sql:
+        ok, _ = check_requirement_coverage(question, fb.sql, columns=None)
+        if ok:
+            return fb.sql.strip()
+
+    # Last resort: return pattern/fallback SQL even if coverage is soft-failing
+    # (validator still re-checks). Prefer pattern when present.
+    if hit and hit.sql:
+        return hit.sql.strip()
     if fb.sql:
         return fb.sql.strip()
     return None

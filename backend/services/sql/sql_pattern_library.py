@@ -124,6 +124,12 @@ def resolve_column(question: str, candidates: Sequence[str]) -> Optional[str]:
         return None
     scored.sort(key=lambda s: (-s[0], len(s[1])))
     if len(scored) > 1 and scored[0][0] == scored[1][0]:
+        # Tie-break: prefer primary customer_* dims over supplier_* / secondary.
+        top = scored[0][0]
+        tied = [name for score, name in scored if score == top]
+        preferred = [n for n in tied if n.lower().startswith("customer_")]
+        if len(preferred) == 1:
+            return preferred[0]
         return None  # ambiguous — let the caller decide rather than guess
     return scored[0][1]
 
@@ -165,7 +171,17 @@ def try_simple_deterministic_sql(
 
     Returns None when the question is too complex / ambiguous for templates.
     """
-    q = (question or "").strip().lower()
+    raw_q = (question or "").strip().lower()
+    # Strip chart/plot phrasing so "bar chart of X by Y" still hits GROUP_BY / TOP_N.
+    q = re.sub(
+        r"\b(show|create|make|plot|draw)\s+(a\s+)?(bar|line|pie|area)?\s*charts?\s*(of\s+)?",
+        "show ",
+        raw_q,
+    )
+    q = re.sub(r"\bas\s+a\s+(bar|line|pie|area)\s+chart\b", "", q)
+    q = re.sub(r"\b(line|bar|pie|area)\s+charts?\s*(of\s+)?", "", q)
+    q = re.sub(r"\b(visualize|visualise|graph|plot)\b", "show", q)
+    q = re.sub(r"\s+", " ", q).strip()
     if not q or not table or not columns:
         return None
 
@@ -188,14 +204,19 @@ def try_simple_deterministic_sql(
 
     # Row count / entity count ("how many orders are there?")
     # Do not swallow "how many distinct suppliers" — that needs COUNT(DISTINCT …).
-    if not re.search(r"\b(distinct|unique)\b", q) and (
-        re.search(r"\b(how many rows|row count|number of rows|count rows)\b", q)
-        or re.search(r"\bhow many\b.+\bare there\b", q)
-        or re.search(
-            r"\bhow many (orders|transactions|employees|products|records|accounts|subscriptions)\b",
-            q,
+    # Do not swallow "how many records in each region" — that needs COUNT_BY.
+    if (
+        not re.search(r"\b(distinct|unique)\b", q)
+        and not re.search(r"\b(each|per|by|across|grouped)\b", q)
+        and (
+            re.search(r"\b(how many rows|row count|number of rows|count rows)\b", q)
+            or re.search(r"\bhow many\b.+\bare there\b", q)
+            or re.search(
+                r"\bhow many (orders|transactions|employees|products|records|accounts|subscriptions)\b",
+                q,
+            )
+            or q in ("count(*)", "count all")
         )
-        or q in ("count(*)", "count all")
     ):
         return PatternMatch(
             "COUNT",
@@ -272,7 +293,8 @@ def try_simple_deterministic_sql(
     _needs_structure = bool(
         re.search(
             r"\b(by|per|each|within|across|for the|for\s+[a-z]|which\s+\w+|highest|lowest|"
-            r"top\s+\d+|bottom\s+\d+|trend|over time|month|year|share|percent|%|"
+            r"top\s+\d+|bottom\s+\d+|trend|over time|monthly|yearly|month[- ]by[- ]month|"
+            r"month|year|share|percent|%|"
             r"above|below|at least|fewer than|compare|versus|vs\b|growth|decline)\b",
             q,
         )
@@ -333,13 +355,15 @@ def try_simple_deterministic_sql(
                 validation_rules=["exactly_one_row"],
             )
 
-    # Count by dimension: "how many orders in each order status"
-    count_by = re.search(
-        r"\bhow many\b.+\b(?:in\s+)?each\s+([a-z0-9_ ]+)\??\s*$",
-        q,
-    ) or re.search(
-        r"\bcount\b.+\bby\s+([a-z0-9_ ]+)\??\s*$",
-        q,
+    # Count by dimension: "how many orders in each order status" /
+    # "how many records belong to each region"
+    count_by = (
+        re.search(
+            r"\bhow many\b.+\b(?:in\s+|belong(?:ing)?\s+to\s+)?each\s+([a-z0-9_ ]+)\??\s*$",
+            q,
+        )
+        or re.search(r"\bcount\b.+\bby\s+([a-z0-9_ ]+)\??\s*$", q)
+        or re.search(r"\brecords?\s+(?:per|by|for each)\s+([a-z0-9_ ]+)\??\s*$", q)
     )
     if count_by and cats:
         dim = resolve_column(count_by.group(1).strip(), [c for c in cats if c])
@@ -418,6 +442,35 @@ def try_simple_deterministic_sql(
                 validation_rules=[f"max_rows:{lim}", "ordered_desc:total"],
             )
 
+    # Dual metric by dimension: "total X and total Y by Z" (before single GROUP_BY)
+    dual_matched = False
+    dual = re.search(
+        r"\btotal\s+([a-z0-9_ ]+?)\s+and\s+(?:total\s+)?([a-z0-9_ ]+?)\s+by\s+"
+        r"([a-z0-9_ ]+?)\s*\??\.?\s*$",
+        q,
+    )
+    if dual and numeric and cats:
+        m1_phrase, m2_phrase, dim_phrase = dual.groups()
+        m1 = resolve_column(m1_phrase, numeric)
+        m2 = resolve_column(m2_phrase, numeric)
+        dim = resolve_column(dim_phrase, [c for c in cats if c])
+        if m1 and m2 and dim and m1 != m2:
+            return PatternMatch(
+                "MULTI_METRIC_GROUP",
+                0.87,
+                sql=(
+                    f"SELECT {_ident(dim)} AS {_ident(dim)}, "
+                    f"SUM({_ident(m1)}) AS total_{m1}, "
+                    f"SUM({_ident(m2)}) AS total_{m2} "
+                    f"FROM {tbl} WHERE {_ident(dim)} IS NOT NULL "
+                    f"GROUP BY {_ident(dim)} "
+                    f"ORDER BY total_{m1} DESC LIMIT 25"
+                ),
+                validation_rules=["non_empty"],
+                reason=f"{m1} and {m2} by {dim}",
+            )
+        dual_matched = True  # dual phrasing present — do not collapse to single GROUP_BY
+
     # Aggregate by dimension: "total revenue by customer region"
     by_match = re.search(
         r"\b(total|sum|average|avg|mean)\s+([a-z0-9_ ]+?)\s+by\s+([a-z0-9_ ]+?)\s*$",
@@ -426,7 +479,7 @@ def try_simple_deterministic_sql(
         r"\b([a-z0-9_ ]+)\s+by\s+([a-z0-9_ ]+)\b",
         q,
     )
-    if by_match and numeric and cats:
+    if by_match and numeric and cats and not dual_matched:
         groups = by_match.groups()
         if len(groups) == 3:
             agg_word, measure_phrase, dim_phrase = groups
@@ -515,12 +568,22 @@ def try_simple_deterministic_sql(
             )
 
     # Above / below average groups
+    dim_phrase = side = measure_phrase = None
     ab_match = re.search(
-        r"\bwhich\s+([a-z0-9_ ]+?)\s+have\s+(above|below)[- ]average\s+([a-z0-9_ ]+)\??\s*$",
+        r"\bwhich\s+([a-z0-9_ ]+?)\s+have\s+(above|below)[- ]average\s+([a-z0-9_ ]+?)\??\s*$",
         q,
     )
-    if ab_match and numeric and cats:
+    if ab_match:
         dim_phrase, side, measure_phrase = ab_match.groups()
+    else:
+        ab_match2 = re.search(
+            r"\bwhich\s+([a-z0-9_ ]+?)\s+have\s+total\s+([a-z0-9_ ]+?)\s+"
+            r"(above|below)\s+the\s+overall\s+average\b",
+            q,
+        )
+        if ab_match2:
+            dim_phrase, measure_phrase, side = ab_match2.groups()
+    if dim_phrase and side and measure_phrase and numeric and cats:
         dim = resolve_column(dim_phrase, [c for c in cats if c])
         measure = resolve_column(measure_phrase, numeric) or resolve_column(q, numeric)
         if measure and dim:
@@ -540,6 +603,33 @@ def try_simple_deterministic_sql(
                 ),
                 validation_rules=["non_empty"],
                 reason=f"{side} average {measure} by {dim}",
+            )
+
+    # Among dim with at least N records, top M by measure
+    min_top = re.search(
+        r"among\s+([a-z0-9_ ]+?)\s+values?\s+with\s+at\s+least\s+(\d+)\s+records?,\s*"
+        r"(?:what are\s+)?the\s+top\s+(\d+)\s+by\s+(?:total\s+)?([a-z0-9_ ]+?)\??\s*$",
+        q,
+    )
+    if min_top and numeric and cats:
+        dim_phrase, min_n, top_n, measure_phrase = min_top.groups()
+        dim = resolve_column(dim_phrase, [c for c in cats if c])
+        measure = resolve_column(measure_phrase, numeric) or resolve_column(q, numeric)
+        if dim and measure:
+            mn = max(1, min(50, int(min_n)))
+            tn = max(1, min(50, int(top_n)))
+            return PatternMatch(
+                "TOP_N_MIN_SAMPLE",
+                0.86,
+                sql=(
+                    f"SELECT {_ident(dim)} AS dim_val, "
+                    f"SUM({_ident(measure)}) AS total_m, COUNT(*) AS n "
+                    f"FROM {tbl} WHERE {_ident(dim)} IS NOT NULL "
+                    f"GROUP BY 1 HAVING COUNT(*) >= {mn} "
+                    f"ORDER BY total_m DESC, dim_val LIMIT {tn}"
+                ),
+                validation_rules=["non_empty", f"max_rows:{tn}"],
+                reason=f"top {tn} {dim} by {measure} with n>={mn}",
             )
 
     # Monthly / yearly trend

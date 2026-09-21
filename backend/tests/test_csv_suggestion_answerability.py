@@ -21,26 +21,11 @@ def test_analytics_csv_suggestions_cross_verify_with_generator():
     )
     questions = result["questions"]
     assert 5 <= len(questions) <= 10
-    assert result.get("generation_version", "").startswith("v4")
+    assert result.get("generation_version", "").startswith("v5")
     difficulties = {q["difficulty"] for q in questions}
     assert difficulties & {"easy", "medium", "hard"}
 
     profile = profile_dataset(sid, ANALYTICS_DEMO_DATASET_ID)
-    schema = {
-        "dataset_id": ANALYTICS_DEMO_DATASET_ID,
-        "duckdb_table": ANALYTICS_DEMO_DATASET_ID,
-        "row_count": profile.row_count,
-        "columns": [
-            {
-                "name": c.name,
-                "dtype": c.dtype,
-                "sample_values": list(getattr(c, "sample_values", None) or [])[:3],
-            }
-            for c in profile.columns
-        ],
-        "fingerprint": profile.fingerprint,
-    }
-
     for q in questions:
         text = q["text"]
         prod = _resolve_production_sql(profile, text)
@@ -52,10 +37,14 @@ def test_analytics_csv_suggestions_cross_verify_with_generator():
             {
                 "session_id": sid,
                 "dataset_id": ANALYTICS_DEMO_DATASET_ID,
-                "duckdb_table": ANALYTICS_DEMO_DATASET_ID,
+                "duckdb_table": profile.table,
                 "question": text,
-                "plan": {"approach": "sql", "steps": ["answer"]},
-                "schema_profile": schema,
+                "plan": {
+                    "approach": "sql",
+                    "steps": ["answer"],
+                    "expected_output_type": "chart" if q.get("wants_chart") else "dataframe",
+                },
+                "schema_profile": profile.to_dict(),
                 "retry_count": 0,
                 "retry_history": [],
                 "execution_metadata": [],

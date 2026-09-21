@@ -296,6 +296,11 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
                         "DISTINCT",
                         "MONTHLY_TREND",
                         "YEARLY_TREND",
+                        "ABOVE_BELOW_AVERAGE",
+                        "CONTRIBUTION",
+                        "TOP_N_MIN_SAMPLE",
+                        "MULTI_METRIC_GROUP",
+                        "FILTERED_AGG",
                     }
                 )
                 if allow_pattern:
