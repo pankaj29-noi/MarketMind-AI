@@ -462,6 +462,7 @@ async def load_marketplace_demo_endpoint(_: None = Depends(limit_expensive_endpo
         MARKETPLACE_DATASET_NAME,
         load_marketplace_demo,
         build_marketplace_schema_profile,
+        get_marketplace_suggested_questions,
     )
 
     session_id = str(uuid.uuid4())
@@ -478,6 +479,7 @@ async def load_marketplace_demo_endpoint(_: None = Depends(limit_expensive_endpo
         except Exception as schema_err:
             logger.warning(f"Could not pre-build marketplace schema profile: {schema_err}")
 
+        suggested = get_marketplace_suggested_questions(max_questions=8)
         return {
             "session_id": result["session_id"],
             "dataset_id": result["dataset_id"],
@@ -489,6 +491,11 @@ async def load_marketplace_demo_endpoint(_: None = Depends(limit_expensive_endpo
             "relationships": [
                 r["description"] for r in result.get("relationships", [])
             ],
+            "suggested_questions": suggested,
+            "suggested_message": (
+                f"Lead Marketplace Demo · {len(suggested)} join-safe starter questions "
+                "(products, suppliers, buyers, leads, orders, categories)."
+            ),
         }
     except FileNotFoundError as e:
         logger.error(f"Marketplace demo data missing: {e}")
@@ -516,6 +523,7 @@ async def load_analytics_demo_endpoint(_: None = Depends(limit_expensive_endpoin
         ANALYTICS_DEMO_DATASET_NAME,
         load_analytics_demo,
         get_demo_example_questions,
+        verify_analytics_demo_suggested_questions,
     )
 
     session_id = str(uuid.uuid4())
@@ -525,6 +533,11 @@ async def load_analytics_demo_endpoint(_: None = Depends(limit_expensive_endpoin
             session_id=session_id,
             dataset_id=ANALYTICS_DEMO_DATASET_ID,
             dataset_name=ANALYTICS_DEMO_DATASET_NAME,
+        )
+        suggested = await asyncio.to_thread(
+            verify_analytics_demo_suggested_questions,
+            session_id,
+            ANALYTICS_DEMO_DATASET_ID,
         )
         return {
             "session_id": result["session_id"],
@@ -538,6 +551,11 @@ async def load_analytics_demo_endpoint(_: None = Depends(limit_expensive_endpoin
             "warm_start": result.get("warm_start"),
             "demo_kind": result.get("demo_kind"),
             "example_questions": get_demo_example_questions(),
+            "suggested_questions": suggested,
+            "suggested_message": (
+                f"Analytics Demo · {len(suggested)} verified starter questions "
+                "that resolve on this 4k-order schema."
+            ),
         }
     except FileNotFoundError as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -605,8 +623,8 @@ async def suggested_questions_endpoint(
     from backend.marketplace.demo_data import (
         MARKETPLACE_TABLES,
         is_marketplace_dataset,
+        get_marketplace_suggested_questions,
     )
-    from backend.marketplace.sql_fallback import EXAMPLE_QUESTIONS
 
     duck = sm.sessions.get(session_id)
     registered = set((duck.registered_tables if duck else None) or [])
@@ -620,18 +638,19 @@ async def suggested_questions_endpoint(
         )
 
     if is_mkt:
-        count = max(1, min(int(request.count or 8), 10))
-        questions = []
-        for i, q in enumerate(EXAMPLE_QUESTIONS[:count]):
-            questions.append(
-                {
-                    "id": f"mkt-ex-{i}",
-                    "question": q,
-                    "tier": "quick",
-                    "difficulty": "simple",
-                    "verified": True,
-                }
-            )
+        questions_raw = get_marketplace_suggested_questions(
+            max_questions=max(1, min(int(request.count or 8), 10))
+        )
+        questions = [
+            {
+                "id": q["id"],
+                "question": q["question"],
+                "tier": q.get("tier") or "quick",
+                "difficulty": "simple",
+                "verified": True,
+            }
+            for q in questions_raw
+        ]
         return {
             "dataset_id": "marketplace",
             "fingerprint": "marketplace-demo",

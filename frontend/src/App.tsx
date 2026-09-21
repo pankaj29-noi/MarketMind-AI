@@ -178,6 +178,47 @@ export const App: React.FC = () => {
     }
   };
 
+  const applyDemoSuggestedQuestions = (
+    data: UploadResponse & {
+      suggested_questions?: Array<{
+        id: string;
+        question: string;
+        intent?: string;
+        verified?: boolean;
+        tier?: string;
+      }>;
+      suggested_message?: string;
+    },
+    categoryLabel: string
+  ) => {
+    const verified = (data.suggested_questions || []).filter((q) => q.verified !== false);
+    const mapped: SuggestedQuestion[] = verified.map((q) => ({
+      id: q.id,
+      text: q.question,
+      category: categoryLabel,
+      difficulty: 'easy',
+      tier: (q.tier as SuggestedQuestion['tier']) || 'quick',
+      confidence: 1,
+      intent: q.intent,
+      validation_status: 'verified',
+      why: 'Verified against this demo schema before display — answers still come from live /analyze.',
+    }));
+    setSuggestedQuestions(mapped);
+    setSuggestedTiers(mapped.length ? [{ tier: 'quick', questions: mapped }] : []);
+    setSuggestedProfile({
+      row_count: data.row_count,
+      column_count: data.columns?.length,
+    });
+    setSuggestedComplexity(null);
+    setSuggestedMessage(
+      data.suggested_message ||
+        `${categoryLabel} · ${mapped.length} verified starter questions`
+    );
+    setSuggestedError(null);
+    setUseAdaptiveSuggestions(mapped.length > 0);
+    setDemoExampleCategories(null);
+  };
+
   const handleLoadMarketplaceDemo = async () => {
     setIsLoadingDemo(true);
     setUploadError('');
@@ -189,13 +230,21 @@ export const App: React.FC = () => {
         const detail = await response.json().catch(() => ({}));
         throw new Error(detail.detail || 'Failed to load marketplace demo.');
       }
-      const data: UploadResponse = await response.json();
+      const data: UploadResponse & {
+        suggested_questions?: Array<{
+          id: string;
+          question: string;
+          intent?: string;
+          verified?: boolean;
+          tier?: string;
+        }>;
+        suggested_message?: string;
+      } = await response.json();
       applySession(data, { adaptive: false });
-      clearSuggestions();
-      setDemoExampleCategories(null);
+      applyDemoSuggestedQuestions(data, 'Lead Marketplace');
       const tableCount = data.tables?.length ?? 0;
       toast(
-        `Marketplace demo loaded — ${tableCount} tables · ${data.row_count?.toLocaleString() ?? 0} rows`,
+        `Marketplace demo loaded — ${tableCount} tables · ${data.row_count?.toLocaleString() ?? 0} rows · ${(data.suggested_questions || []).length} questions`,
         'success'
       );
     } catch (err: any) {
@@ -231,35 +280,10 @@ export const App: React.FC = () => {
       } = await response.json();
 
       applySession(data, { adaptive: false });
-      clearSuggestions();
-      setDemoExampleCategories(null);
-
-      const verified = (data.suggested_questions || []).filter((q) => q.verified !== false);
-      const mapped: SuggestedQuestion[] = verified.map((q) => ({
-        id: q.id,
-        text: q.question,
-        category: 'Demo Data',
-        difficulty: 'easy',
-        tier: (q.tier as SuggestedQuestion['tier']) || 'quick',
-        confidence: 1,
-        intent: q.intent,
-        validation_status: 'verified',
-        why: 'Verified by executing read-only SQL against Demo Data before display.',
-      }));
-      setSuggestedQuestions(mapped);
-      setSuggestedTiers([{ tier: 'quick', questions: mapped }]);
-      setSuggestedProfile({
-        row_count: data.row_count,
-        column_count: data.columns?.length,
-      });
-      setSuggestedMessage(
-        data.suggested_message ||
-          `Demo Data · ${mapped.length} verified starter questions`
-      );
-      setUseAdaptiveSuggestions(true);
+      applyDemoSuggestedQuestions(data, 'Demo Data');
 
       toast(
-        `Demo Data loaded — ${data.row_count?.toLocaleString() ?? 0} rows · ${mapped.length} verified questions`,
+        `Demo Data loaded — ${data.row_count?.toLocaleString() ?? 0} rows · ${(data.suggested_questions || []).length} verified questions`,
         'success'
       );
     } catch (err: any) {
@@ -283,13 +307,20 @@ export const App: React.FC = () => {
       }
       const data: UploadResponse & {
         example_questions?: Record<string, string[]>;
+        suggested_questions?: Array<{
+          id: string;
+          question: string;
+          intent?: string;
+          verified?: boolean;
+          tier?: string;
+        }>;
+        suggested_message?: string;
         warm_start?: unknown;
       } = await response.json();
       applySession(data, { adaptive: false });
-      clearSuggestions();
-      setDemoExampleCategories(data.example_questions || null);
+      applyDemoSuggestedQuestions(data, 'Analytics Demo');
       toast(
-        `Analytics demo loaded — ${data.row_count?.toLocaleString() ?? 4000} orders (schema warm-started)`,
+        `Analytics demo loaded — ${data.row_count?.toLocaleString() ?? 4000} orders · ${(data.suggested_questions || []).length} verified questions`,
         'success'
       );
     } catch (err: any) {

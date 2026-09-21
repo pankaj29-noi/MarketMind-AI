@@ -192,27 +192,100 @@ def load_analytics_demo(session_id: str) -> Dict[str, Any]:
     }
 
 
-def get_demo_example_questions() -> Dict[str, List[str]]:
-    """Categorized example questions for UI — never paired with answers."""
-    from backend.benchmarks.demo_marketplace_questions import DEMO_QUESTIONS
+# Curated starter questions the analytics pipeline can answer on the 4k demo
+# (deterministic fallback + DuckDB). No abstain/refuse / write / missing-column traps.
+ANALYTICS_DEMO_SUGGESTED_QUESTIONS: List[str] = [
+    "What is the total revenue?",
+    "What is the total profit?",
+    "How many orders are there?",
+    "How many unique customers are there?",
+    "Which product category generated the most revenue?",
+    "Which region generated the most revenue?",
+    "Show revenue by region.",
+    "Show the top 10 suppliers by revenue.",
+]
 
-    cats: Dict[str, List[str]] = {}
-    for q in DEMO_QUESTIONS:
-        if q.get("expect_abstain") or q.get("expect_refuse"):
+
+def get_demo_example_questions() -> Dict[str, List[str]]:
+    """
+    Categorized example questions for the Analytics Demo UI.
+
+    Only includes questions verified to resolve via schema-aware deterministic SQL
+    (or simple patterns) against the 4k orders demo — never intentional failure traps.
+    """
+    return {
+        "Quick totals": ANALYTICS_DEMO_SUGGESTED_QUESTIONS[:4],
+        "Breakdowns & rankings": ANALYTICS_DEMO_SUGGESTED_QUESTIONS[4:],
+    }
+
+
+def verify_analytics_demo_suggested_questions(
+    session_id: str,
+    dataset_id: str = ANALYTICS_DEMO_DATASET_ID,
+    *,
+    max_questions: int = 8,
+) -> List[Dict[str, Any]]:
+    """
+    Return starter questions that pass coverage + schema validation + DuckDB execute
+    on the loaded analytics demo session. Answers still come only from /analyze.
+    """
+    from backend.services.analytics_fallback import resolve_analytics_fallback
+    from backend.services.analytics_perf import get_or_build_csv_schema_profile
+    from backend.services.requirement_coverage import check_requirement_coverage
+    from backend.services.sql.sql_quality_validator import validate_sql
+    from backend.mcp.data_access import run_query
+
+    profile = get_or_build_csv_schema_profile(session_id, dataset_id)
+    verified: List[Dict[str, Any]] = []
+    for i, question in enumerate(ANALYTICS_DEMO_SUGGESTED_QUESTIONS):
+        if len(verified) >= max_questions:
+            break
+        fb = resolve_analytics_fallback(question, profile, dataset_id)
+        sql = fb.sql
+        if not sql:
             continue
-        cat = q.get("category") or "Business Analytics"
-        cats.setdefault(cat, [])
-        if len(cats[cat]) < 8:
-            cats[cat].append(q["question"])
-    # Ensure error-demo examples appear
-    cats.setdefault("Reliability Checks", [])
-    cats["Reliability Checks"].extend(
-        [
-            "Which supplier has the highest employee satisfaction?",
-            "Delete all orders from the database.",
-        ]
-    )
-    return cats
+        ok_cov, _miss = check_requirement_coverage(question, sql, columns=None)
+        vf = validate_sql(sql, profile, question)
+        if not (ok_cov and vf.get("is_valid")):
+            continue
+        out = run_query(session_id, dataset_id, sql)
+        if not out.get("success") or not (out.get("row_count") or 0):
+            continue
+        verified.append(
+            {
+                "id": f"analytics-demo-{i}",
+                "question": question,
+                "intent": "demo_curated",
+                "verified": True,
+                "tier": "quick",
+                "verification": {
+                    "row_count": out.get("row_count"),
+                    "sql_validated": True,
+                },
+            }
+        )
+    return verified
+
+
+def get_marketplace_suggested_questions(
+    *,
+    max_questions: int = 8,
+) -> List[Dict[str, Any]]:
+    """Curated multi-table marketplace questions backed by join templates."""
+    from backend.marketplace.sql_fallback import EXAMPLE_QUESTIONS
+
+    out: List[Dict[str, Any]] = []
+    for i, question in enumerate(EXAMPLE_QUESTIONS[:max_questions]):
+        out.append(
+            {
+                "id": f"mkt-ex-{i}",
+                "question": question,
+                "intent": "marketplace_curated",
+                "verified": True,
+                "tier": "quick",
+            }
+        )
+    return out
 
 
 def load_marketplace_demo(session_id: str) -> Dict[str, Any]:
