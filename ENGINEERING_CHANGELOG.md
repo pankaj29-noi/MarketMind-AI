@@ -4,7 +4,7 @@ Every logical fix from the autonomous audit → fix → test → verify loop.
 
 ---
 
-## 2026-09-22 — `838dd3c`
+## 2026-09-22 — `ede34be`
 
 **feat: add built-in Demo Data (~40 rows) with verified starter questions**
 
