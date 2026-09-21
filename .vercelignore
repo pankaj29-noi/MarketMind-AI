@@ -8,6 +8,8 @@ docs
 screenshots
 uploads
 scratch
+models
+*.gguf
 .pytest_cache
 backend/**/__pycache__
 backend/tests
