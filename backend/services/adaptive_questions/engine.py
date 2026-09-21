@@ -195,6 +195,27 @@ def generate_suggested_questions(
     started = time.time()
     exclude_ids = exclude_ids or []
 
+    # Prefer a cached schema fingerprint so a warm suggestion hit does not re-profile.
+    fingerprint: Optional[str] = None
+    try:
+        from backend.services.session_manager import session_manager
+
+        session = session_manager.get_session(session_id)
+        cached_schema = (getattr(session, "schema_profile_cache", None) or {}).get(dataset_id)
+        if isinstance(cached_schema, dict) and cached_schema.get("fingerprint"):
+            fingerprint = str(cached_schema["fingerprint"])
+            cache_key_fp = f"{fingerprint}|{GENERATION_VERSION}"
+            if not refresh and not exclude_ids:
+                cached = qcache.get_cached(session_id, dataset_id, cache_key_fp)
+                if cached:
+                    return {
+                        **{k: v for k, v in cached.items() if k != "question_pool"},
+                        "cache_hit": True,
+                        "generation_ms": round((time.time() - started) * 1000, 2),
+                    }
+    except Exception:
+        fingerprint = None
+
     profile = profile_dataset(session_id, dataset_id)
     fingerprint = profile.fingerprint
     cache_key_fp = f"{fingerprint}|{GENERATION_VERSION}"

@@ -65,10 +65,32 @@ def resolve_column(question: str, candidates: Sequence[str]) -> Optional[str]:
 
     Matching is name-evidence only: full name, name with separators as spaces, or
     the distinctive tokens of the name (product_name -> "product"/"products").
+    Synonyms (sales→revenue, vendors→supplier) expand evidence without inventing columns.
     Returns None rather than guessing when two candidates tie.
     """
     q = (question or "").lower()
-    tokens = _question_tokens(q)
+    # Expand common business synonyms so paraphrases resolve to real columns.
+    _SYNONYMS = {
+        "sales": ("revenue", "net_sales", "sales_amount", "gmv"),
+        "vendors": ("supplier", "vendor"),
+        "vendor": ("supplier", "vendor"),
+        "sellers": ("supplier", "vendor"),
+        "seller": ("supplier", "vendor"),
+        "buyers": ("customer", "buyer"),
+        "buyer": ("customer", "buyer"),
+        "teams": ("department",),
+        "team": ("department",),
+        "stores": ("store",),
+        "brands": ("brand",),
+        "plans": ("plan",),
+        "recurring revenue": ("mrr",),
+        "mrr": ("mrr",),
+    }
+    expanded_q = q
+    for syn, targets in _SYNONYMS.items():
+        if re.search(rf"\b{re.escape(syn)}\b", q):
+            expanded_q += " " + " ".join(targets)
+    tokens = _question_tokens(expanded_q)
     scored: List[Tuple[int, str]] = []
     for name in candidates:
         if not name:
@@ -76,7 +98,7 @@ def resolve_column(question: str, candidates: Sequence[str]) -> Optional[str]:
         lower = name.lower()
         spaced = lower.replace("_", " ")
         score = 0
-        if lower in q or spaced in q:
+        if lower in q or spaced in q or lower in expanded_q:
             score = 100 + len(lower)
         else:
             parts = [p for p in lower.split("_") if p]
@@ -85,13 +107,17 @@ def resolve_column(question: str, candidates: Sequence[str]) -> Optional[str]:
             if matched and not leftover:
                 score = 80
             elif matched and leftover == {"name"}:
-                # "top 10 products" means the product label column, not a product attribute.
                 score = 70
             elif matched and leftover == {"id"}:
                 score = 45
             elif matched:
-                # Partial name match ("product" for product_category) is weaker but usable.
                 score = 40 + 10 * len(matched)
+            # Synonym hit: question says "sales", candidate is "revenue"
+            for syn, targets in _SYNONYMS.items():
+                if re.search(rf"\b{re.escape(syn)}\b", q) and any(
+                    t in lower or t == lower for t in targets
+                ):
+                    score = max(score, 75)
         if score:
             scored.append((score, name))
     if not scored:
@@ -161,10 +187,14 @@ def try_simple_deterministic_sql(
     tbl = _ident(table)
 
     # Row count / entity count ("how many orders are there?")
-    if (
+    # Do not swallow "how many distinct suppliers" — that needs COUNT(DISTINCT …).
+    if not re.search(r"\b(distinct|unique)\b", q) and (
         re.search(r"\b(how many rows|row count|number of rows|count rows)\b", q)
         or re.search(r"\bhow many\b.+\bare there\b", q)
-        or re.search(r"\bhow many (orders|transactions|employees|products|records|accounts|subscriptions)\b", q)
+        or re.search(
+            r"\bhow many (orders|transactions|employees|products|records|accounts|subscriptions)\b",
+            q,
+        )
         or q in ("count(*)", "count all")
     ):
         return PatternMatch(
@@ -235,64 +265,67 @@ def try_simple_deterministic_sql(
                 reason=f"percent of total {measure} from top {lim} {dim}",
             )
 
-    # Sum / avg / min / max of a named column
-    for agg, words in (
-        ("SUM", r"\b(sum|total)\s+(?:of\s+)?([a-z0-9_]+)"),
-        ("AVG", r"\b(average|avg|mean)\s+(?:of\s+)?([a-z0-9_]+)"),
-        ("MIN", r"\b(minimum|min)\s+(?:of\s+)?([a-z0-9_]+)"),
-        ("MAX", r"\b(maximum|max)\s+(?:of\s+)?([a-z0-9_]+)"),
-        ("COUNT_DISTINCT", r"\b(how many distinct|count distinct|unique)\s+([a-z0-9_]+)"),
-    ):
-        mm = re.search(words, q)
-        if not mm:
-            continue
-        raw = mm.group(2).lower()
-        col = col_by_lower.get(raw)
-        if not col:
-            # fuzzy: column mentioned somewhere
-            for cname in names:
-                if cname.lower() in q and (
-                    agg.startswith("COUNT")
-                    or cname in numeric
-                    or any(
-                        str(c.get("dtype")) == "number"
-                        for c in columns
-                        if c.get("name") == cname
-                    )
-                ):
-                    # prefer exact token match later
-                    pass
-            # try token equality only
-            continue
-        if agg == "SUM":
-            return PatternMatch(
-                "SUM",
-                0.93,
-                sql=f"SELECT SUM({_ident(col)}) AS total_{col} FROM {tbl}",
-                validation_rules=["exactly_one_row"],
-            )
-        if agg == "AVG":
-            return PatternMatch(
-                "AVG",
-                0.93,
-                sql=f"SELECT AVG({_ident(col)}) AS avg_{col} FROM {tbl}",
-                validation_rules=["exactly_one_row"],
-            )
-        if agg == "MIN":
-            return PatternMatch(
-                "MIN",
-                0.93,
-                sql=f"SELECT MIN({_ident(col)}) AS min_{col} FROM {tbl}",
-                validation_rules=["exactly_one_row"],
-            )
-        if agg == "MAX":
-            return PatternMatch(
-                "MAX",
-                0.93,
-                sql=f"SELECT MAX({_ident(col)}) AS max_{col} FROM {tbl}",
-                validation_rules=["exactly_one_row"],
-            )
-        if agg == "COUNT_DISTINCT":
+    # Sum / avg / min / max of a named column.
+    # Skip when the question clearly asks for a breakdown, ranking, filter, or trend —
+    # those shapes are handled by the more specific patterns below. Matching a bare
+    # SUM here used to silently answer "total revenue by region" as a global total.
+    _needs_structure = bool(
+        re.search(
+            r"\b(by|per|each|within|across|for the|for\s+[a-z]|which\s+\w+|highest|lowest|"
+            r"top\s+\d+|bottom\s+\d+|trend|over time|month|year|share|percent|%|"
+            r"above|below|at least|fewer than|compare|versus|vs\b|growth|decline)\b",
+            q,
+        )
+    )
+    if not _needs_structure:
+        for agg, words in (
+            ("SUM", r"\b(sum|total)\s+(?:of\s+)?([a-z0-9_]+)"),
+            ("AVG", r"\b(average|avg|mean)\s+(?:of\s+)?([a-z0-9_]+)"),
+            ("MIN", r"\b(minimum|min)\s+(?:of\s+)?([a-z0-9_]+)"),
+            ("MAX", r"\b(maximum|max)\s+(?:of\s+)?([a-z0-9_]+)"),
+        ):
+            mm = re.search(words, q)
+            if not mm:
+                continue
+            raw = mm.group(2).lower()
+            col = col_by_lower.get(raw)
+            if not col:
+                continue
+            if agg == "SUM":
+                return PatternMatch(
+                    "SUM",
+                    0.93,
+                    sql=f"SELECT SUM({_ident(col)}) AS total_{col} FROM {tbl}",
+                    validation_rules=["exactly_one_row"],
+                )
+            if agg == "AVG":
+                return PatternMatch(
+                    "AVG",
+                    0.93,
+                    sql=f"SELECT AVG({_ident(col)}) AS avg_{col} FROM {tbl}",
+                    validation_rules=["exactly_one_row"],
+                )
+            if agg == "MIN":
+                return PatternMatch(
+                    "MIN",
+                    0.93,
+                    sql=f"SELECT MIN({_ident(col)}) AS min_{col} FROM {tbl}",
+                    validation_rules=["exactly_one_row"],
+                )
+            if agg == "MAX":
+                return PatternMatch(
+                    "MAX",
+                    0.93,
+                    sql=f"SELECT MAX({_ident(col)}) AS max_{col} FROM {tbl}",
+                    validation_rules=["exactly_one_row"],
+                )
+
+    # Distinct count: "how many distinct suppliers"
+    mm = re.search(r"\b(?:how many\s+)?(?:distinct|unique)\s+([a-z0-9_ ]+?)(?:\s+are there)?\??\s*$", q)
+    if mm:
+        phrase = mm.group(1).strip()
+        col = col_by_lower.get(phrase.replace(" ", "_")) or resolve_column(phrase, names)
+        if col:
             return PatternMatch(
                 "DISTINCT_COUNT",
                 0.93,
@@ -300,8 +333,63 @@ def try_simple_deterministic_sql(
                 validation_rules=["exactly_one_row"],
             )
 
-    # Top-N by numeric measure grouped by a categorical column mentioned in question
-    if re.search(r"\btop\s+\d+\b", q) and numeric:
+    # Count by dimension: "how many orders in each order status"
+    count_by = re.search(
+        r"\bhow many\b.+\b(?:in\s+)?each\s+([a-z0-9_ ]+)\??\s*$",
+        q,
+    ) or re.search(
+        r"\bcount\b.+\bby\s+([a-z0-9_ ]+)\??\s*$",
+        q,
+    )
+    if count_by and cats:
+        dim = resolve_column(count_by.group(1).strip(), [c for c in cats if c])
+        if dim:
+            return PatternMatch(
+                "COUNT_BY",
+                0.88,
+                sql=(
+                    f"SELECT {_ident(dim)} AS dim, COUNT(*) AS n "
+                    f"FROM {tbl} GROUP BY 1 ORDER BY n DESC"
+                ),
+                validation_rules=["non_empty"],
+                reason=f"count by {dim}",
+            )
+
+    # Boolean / categorical filter count: "how many transactions were returned"
+    filter_count = re.search(
+        r"\bhow many\b.+\b(were|are|is)\s+([a-z0-9_ ]+)\??\s*$",
+        q,
+    )
+    if filter_count:
+        token = filter_count.group(2).strip().lower().replace(" ", "_")
+        for c in columns:
+            name = c.get("name")
+            if not name:
+                continue
+            lower = name.lower()
+            if token == lower or token in lower or _singular(token) in lower.split("_"):
+                return PatternMatch(
+                    "FILTERED_COUNT",
+                    0.82,
+                    sql=(
+                        f"SELECT COUNT(*) AS n FROM {tbl} "
+                        f"WHERE LOWER(CAST({_ident(name)} AS VARCHAR)) IN "
+                        f"('yes', 'true', '1', '{token.replace(chr(39), '')}')"
+                    ),
+                    validation_rules=["exactly_one_row"],
+                    reason=f"count where {name}",
+                )
+
+    # Top-N by numeric measure. "most/biggest" paraphrases count, but "which X has the
+    # highest Y" is a single-group ranking handled below — do not steal it here.
+    _is_which_highest = bool(
+        re.search(r"\bwhich\s+.+\s+has\s+the\s+(highest|lowest|most|least)\b", q)
+    )
+    if (
+        not _is_which_highest
+        and (re.search(r"\btop\s+\d+\b", q) or re.search(r"\b(most|biggest|largest)\b", q))
+        and numeric
+    ):
         lim = _limit(q)
         measure = None
         for n in numeric:
@@ -424,6 +512,110 @@ def try_simple_deterministic_sql(
                 ),
                 validation_rules=["exactly_one_row"],
                 reason=f"{agg.lower()} {measure} where {dim}={filter_value}",
+            )
+
+    # Above / below average groups
+    ab_match = re.search(
+        r"\bwhich\s+([a-z0-9_ ]+?)\s+have\s+(above|below)[- ]average\s+([a-z0-9_ ]+)\??\s*$",
+        q,
+    )
+    if ab_match and numeric and cats:
+        dim_phrase, side, measure_phrase = ab_match.groups()
+        dim = resolve_column(dim_phrase, [c for c in cats if c])
+        measure = resolve_column(measure_phrase, numeric) or resolve_column(q, numeric)
+        if measure and dim:
+            op = ">" if side == "above" else "<"
+            order = "DESC" if side == "above" else "ASC"
+            return PatternMatch(
+                "ABOVE_BELOW_AVERAGE",
+                0.85,
+                sql=(
+                    f"WITH g AS (\n"
+                    f"  SELECT {_ident(dim)} AS dim, SUM({_ident(measure)}) AS total\n"
+                    f"  FROM {tbl} GROUP BY 1\n"
+                    f")\n"
+                    f"SELECT dim, total FROM g\n"
+                    f"WHERE total {op} (SELECT AVG(total) FROM g)\n"
+                    f"ORDER BY total {order}"
+                ),
+                validation_rules=["non_empty"],
+                reason=f"{side} average {measure} by {dim}",
+            )
+
+    # Monthly / yearly trend
+    if re.search(r"\b(monthly|month[- ]by[- ]month|by month|over time)\b", q) and numeric:
+        measure = resolve_column(q, numeric)
+        time_cols = [
+            c.get("name")
+            for c in columns
+            if c.get("name")
+            and (
+                str(c.get("analytical_role") or "").lower() == "temporal"
+                or "date" in str(c.get("dtype") or "").lower()
+                or "date" in (c.get("name") or "").lower()
+                or (c.get("name") or "").lower() in ("month", "period")
+            )
+        ]
+        time_col = time_cols[0] if time_cols else None
+        if measure and time_col:
+            return PatternMatch(
+                "MONTHLY_TREND",
+                0.84,
+                sql=(
+                    f"SELECT strftime(TRY_CAST({_ident(time_col)} AS DATE), '%Y-%m') AS period, "
+                    f"SUM({_ident(measure)}) AS total "
+                    f"FROM {tbl} "
+                    f"WHERE TRY_CAST({_ident(time_col)} AS DATE) IS NOT NULL "
+                    f"GROUP BY 1 ORDER BY 1"
+                ),
+                validation_rules=["non_empty"],
+                reason=f"monthly {measure} trend",
+            )
+
+    if re.search(r"\b(by year|yearly|each year)\b", q) and numeric:
+        measure = resolve_column(q, numeric)
+        time_cols = [
+            c.get("name")
+            for c in columns
+            if c.get("name")
+            and (
+                str(c.get("analytical_role") or "").lower() == "temporal"
+                or "date" in str(c.get("dtype") or "").lower()
+                or "date" in (c.get("name") or "").lower()
+                or (c.get("name") or "").lower() in ("month", "period", "hire_date", "launch_date")
+            )
+        ]
+        time_col = time_cols[0] if time_cols else None
+        if measure and time_col:
+            return PatternMatch(
+                "YEARLY_TREND",
+                0.84,
+                sql=(
+                    f"SELECT CAST(strftime(TRY_CAST({_ident(time_col)} AS DATE), '%Y') AS INTEGER) AS year, "
+                    f"SUM({_ident(measure)}) AS total "
+                    f"FROM {tbl} "
+                    f"WHERE TRY_CAST({_ident(time_col)} AS DATE) IS NOT NULL "
+                    f"GROUP BY 1 ORDER BY 1"
+                ),
+                validation_rules=["non_empty"],
+                reason=f"yearly {measure}",
+            )
+
+    # Contribution / share of total by dimension
+    if re.search(r"\b(share of total|percentage of total|% of total|contribution)\b", q) and numeric and cats:
+        measure = resolve_column(q, numeric)
+        dim = resolve_column(q, [c for c in cats if c])
+        if measure and dim and not re.search(r"\btop\s+\d+\b", q):
+            return PatternMatch(
+                "CONTRIBUTION",
+                0.86,
+                sql=(
+                    f"SELECT {_ident(dim)} AS dim, "
+                    f"ROUND(100.0 * SUM({_ident(measure)}) / NULLIF((SELECT SUM({_ident(measure)}) FROM {tbl}), 0), 2) AS pct "
+                    f"FROM {tbl} GROUP BY 1 ORDER BY pct DESC"
+                ),
+                validation_rules=["percent_bounds_0_100", "non_empty"],
+                reason=f"share of total {measure} by {dim}",
             )
 
     return None

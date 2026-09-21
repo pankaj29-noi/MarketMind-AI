@@ -119,3 +119,19 @@ Every logical fix from the autonomous audit → fix → test → verify loop.
 |---|---|---|---|
 | Render API suspended | `https://marketmind-api.onrender.com/health` → 503 "suspended by its owner" | Unsuspend the Render service (or point Vercel API at a live host) and set `GEMINI_FALLBACK_MODEL=gemini-3.6-flash` | Production cannot answer any question |
 | Groq daily token budget exhausted | TPD Limit 200000, Used ~199777 | Wait for daily reset, or upgrade Groq tier / rotate key | Full LLM-path accuracy and healthy-provider latency cannot be re-measured |
+
+---
+
+## 2026-09-21 — (this commit)
+
+**fix: raise deterministic accuracy floor; isolate suggestion cache; theme + cold-start**
+
+| | |
+|---|---|
+| **Problem** | Group-by questions answered as global SUM (silent wrong answer). Suggestion cache survived re-upload. Charts unreadable in light theme. Theme did not persist. FE had no cold-start retry. Session isolation unproven beyond analyze cache. |
+| **Root cause** | Bare SUM/AVG matched before GROUP_BY; `invalidate_session` never called from `register_csv`/`evict`; Plotly hard-coded light-on-dark colors; `isDark` defaulted every load; explore noted warm suggestion path always re-profiled. |
+| **Solution** | Gate scalar aggregates when breakdown markers present; add COUNT_BY / FILTERED_COUNT / ABOVE_BELOW / trends / contribution + synonym resolve; invalidate qcache on register/evict; fingerprint short-circuit before profile; Plotly theme + MutationObserver; localStorage theme; `apiFetch` retries on analyze/suggestions. |
+| **Tests** | `test_session_isolation.py` (4). Full suite **315 passed**. |
+| **Accuracy** | Deterministic NL→SQL **29.33% → 61.33%** (simple 87.5%→97.5%, medium 4.9%→65.9%). |
+| **Deploy** | Push to main. Render still suspended (blocker). |
+

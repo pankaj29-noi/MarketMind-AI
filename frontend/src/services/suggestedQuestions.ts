@@ -1,4 +1,4 @@
-import { API_BASE } from '@/lib/api';
+import { apiFetch } from '@/lib/apiFetch';
 
 export type QuestionTier = 'quick' | 'analytics' | 'advanced' | 'expert';
 
@@ -60,7 +60,7 @@ export async function fetchSuggestedQuestions(params: {
   refresh?: boolean;
   excludeIds?: string[];
 }): Promise<SuggestedQuestionsResponse> {
-  const res = await fetch(`${API_BASE}/session/${params.sessionId}/suggested-questions`, {
+  const res = await apiFetch(`/session/${params.sessionId}/suggested-questions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -92,7 +92,7 @@ export async function fetchFollowupQuestions(params: {
   resultRows?: Record<string, unknown>[];
   count?: number;
 }): Promise<FollowupQuestionsResponse> {
-  const res = await fetch(`${API_BASE}/session/${params.sessionId}/followup-questions`, {
+  const res = await apiFetch(`/session/${params.sessionId}/followup-questions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

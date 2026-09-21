@@ -2,8 +2,22 @@ import React, { useEffect, useRef } from 'react';
 import Plotly from 'plotly.js-dist-min';
 
 export interface PlotlyChartProps {
-  chartData: any; // The Plotly JSON object (e.g. { data: [...], layout: {...} })
+  chartData: any;
   chartId?: string;
+}
+
+function readThemeColors(isDark: boolean) {
+  return isDark
+    ? {
+        font: '#f4f4f5',
+        grid: 'rgba(255, 255, 255, 0.08)',
+        line: 'rgba(255, 255, 255, 0.12)',
+      }
+    : {
+        font: '#18181b',
+        grid: 'rgba(24, 24, 27, 0.08)',
+        line: 'rgba(24, 24, 27, 0.14)',
+      };
 }
 
 export const PlotlyChart: React.FC<PlotlyChartProps> = ({ chartData, chartId }) => {
@@ -12,63 +26,95 @@ export const PlotlyChart: React.FC<PlotlyChartProps> = ({ chartData, chartId }) 
   useEffect(() => {
     if (!containerRef.current || !chartData) return;
 
+    const isDark = document.documentElement.classList.contains('dark');
+    const colors = readThemeColors(isDark);
+
     try {
-      // Clean previous plots
       Plotly.purge(containerRef.current);
-      
+
       const plotData = chartData.data || [];
       const layout = chartData.layout || {};
-      
-      // Override layout for dark premium theme integration
+
       const themedLayout = {
         ...layout,
         paper_bgcolor: 'rgba(0,0,0,0)',
         plot_bgcolor: 'rgba(0,0,0,0)',
         font: {
           family: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
-          color: '#f4f4f5',
-          size: 11
+          color: colors.font,
+          size: 11,
+          ...(layout.font || {}),
         },
         xaxis: {
           ...layout.xaxis,
-          gridcolor: 'rgba(255, 255, 255, 0.05)',
-          linecolor: 'rgba(255, 255, 255, 0.08)',
-          zerolinecolor: 'rgba(255, 255, 255, 0.08)',
+          gridcolor: colors.grid,
+          linecolor: colors.line,
+          zerolinecolor: colors.line,
+          tickfont: { color: colors.font },
         },
         yaxis: {
           ...layout.yaxis,
-          gridcolor: 'rgba(255, 255, 255, 0.05)',
-          linecolor: 'rgba(255, 255, 255, 0.08)',
-          zerolinecolor: 'rgba(255, 255, 255, 0.08)',
+          gridcolor: colors.grid,
+          linecolor: colors.line,
+          zerolinecolor: colors.line,
+          tickfont: { color: colors.font },
         },
-        margin: { t: 40, r: 20, l: 50, b: 40 }
+        legend: {
+          ...(layout.legend || {}),
+          font: { color: colors.font, size: 11 },
+        },
+        margin: { t: 40, r: 20, l: 50, b: 40, ...(layout.margin || {}) },
       };
 
-      Plotly.newPlot(
-        containerRef.current, 
-        plotData, 
-        themedLayout, 
-        { responsive: true, displayModeBar: false }
-      );
+      Plotly.newPlot(containerRef.current, plotData, themedLayout, {
+        responsive: true,
+        displayModeBar: false,
+      });
     } catch (e) {
-      console.error("Plotly rendering failed:", e);
+      console.error('Plotly rendering failed:', e);
     }
-    
+
     return () => {
       if (containerRef.current) {
         try {
           Plotly.purge(containerRef.current);
-        } catch (e) {}
+        } catch {
+          /* ignore purge errors on unmount */
+        }
       }
     };
   }, [chartData]);
 
+  // Re-theme when the document dark class toggles without remounting chartData.
+  useEffect(() => {
+    const root = document.documentElement;
+    const observer = new MutationObserver(() => {
+      if (!containerRef.current || !chartData) return;
+      const isDark = root.classList.contains('dark');
+      const colors = readThemeColors(isDark);
+      Plotly.relayout(containerRef.current, {
+        'font.color': colors.font,
+        'xaxis.gridcolor': colors.grid,
+        'xaxis.linecolor': colors.line,
+        'xaxis.zerolinecolor': colors.line,
+        'xaxis.tickfont.color': colors.font,
+        'yaxis.gridcolor': colors.grid,
+        'yaxis.linecolor': colors.line,
+        'yaxis.zerolinecolor': colors.line,
+        'yaxis.tickfont.color': colors.font,
+        'legend.font.color': colors.font,
+      }).catch(() => undefined);
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, [chartData]);
+
   return (
-    <div 
+    <div
       id={chartId}
-      ref={containerRef} 
-      className="w-full h-full min-h-[450px]" 
-      style={{ minHeight: '450px' }} 
+      ref={containerRef}
+      className="w-full h-full min-h-[450px]"
+      style={{ minHeight: '450px' }}
     />
   );
 };

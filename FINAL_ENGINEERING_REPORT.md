@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-21
 **Loop:** audit → fix → test → commit → push → re-measure (7 commits)
-**Suite:** 311 tests, all passing
+**Suite:** 315 tests, all passing
 **Production:** frontend live; **backend suspended** (blocker)
 
 ---
@@ -51,11 +51,11 @@ stops paying for dead round-trips.
 
 | Slice | Pass | Total | Accuracy |
 |---|---:|---:|---:|
-| Overall | 44 | 150 | **29.33%** |
-| Simple | 35 | 40 | **87.5%** |
-| Medium | 2 | 41 | 4.9% |
-| Advanced | 7 | 40 | 17.5% |
-| Expert | 0 | 29 | 0.0% |
+| Overall | 92 | 150 | **61.33%** (was 29.33%) |
+| Simple | 39 | 40 | **97.5%** |
+| Medium | 27 | 41 | **65.9%** |
+| Advanced | 21 | 40 | **52.5%** |
+| Expert | 5 | 29 | **17.2%** |
 | Abstain | 10 | 10 | **100%** |
 | Ambiguous | 1 | 1 | **100%** |
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Workspace } from './pages/Workspace';
 import { toast } from './lib/toast';
 import { API_BASE } from './lib/api';
+import { apiFetch } from './lib/apiFetch';
 import { IntelligenceBackground } from './components/layout/IntelligenceBackground';
 import {
   fetchSuggestedQuestions,
@@ -21,7 +22,16 @@ import type {
 export const App: React.FC = () => {
   // Navigation & UI States
   const [activeTab, setActiveTab] = useState<'analysis' | 'metrics'>('analysis');
-  const [isDark, setIsDark] = useState(true);
+  const [isDark, setIsDark] = useState(() => {
+    try {
+      const saved = localStorage.getItem('marketmind-theme');
+      if (saved === 'light') return false;
+      if (saved === 'dark') return true;
+    } catch {
+      /* private mode */
+    }
+    return true;
+  });
   const [isLeftSidebarCollapsed, setIsLeftSidebarCollapsed] = useState(false);
   const [isRightSidebarCollapsed, setIsRightSidebarCollapsed] = useState(false);
 
@@ -283,10 +293,15 @@ export const App: React.FC = () => {
     const pollInterval = setInterval(() => pollTrace(session.session_id), 1500);
 
     try {
-      const response = await fetch(`${API_BASE}/analyze`, {
+      const response = await apiFetch('/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: session.session_id, question: userQuestion }),
+        retries: 3,
+        retryDelayMs: 2000,
+        onRetry: (attempt) => {
+          toast(`Backend waking up — retry ${attempt}…`, 'info', 4000);
+        },
       });
 
       if (!response.ok) throw new Error('Analysis run failed.');
@@ -386,13 +401,18 @@ export const App: React.FC = () => {
     ]);
   };
 
-  // Sync dark theme class on document element
+  // Sync dark theme class on document element and persist across reloads
   useEffect(() => {
     const root = window.document.documentElement;
     if (isDark) {
       root.classList.add('dark');
     } else {
       root.classList.remove('dark');
+    }
+    try {
+      localStorage.setItem('marketmind-theme', isDark ? 'dark' : 'light');
+    } catch {
+      /* private mode */
     }
   }, [isDark]);
 

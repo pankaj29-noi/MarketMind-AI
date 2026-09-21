@@ -83,6 +83,11 @@ class SessionManager:
                     clear_session_analysis_cache(session_id)
                 except Exception:
                     pass
+                try:
+                    from backend.services.adaptive_questions.cache import invalidate_session
+                    invalidate_session(session_id)
+                except Exception:
+                    pass
                 logger.info(f"Successfully registered CSV {file_path} as table {table_name} in session {session_id}")
                 return table_name
             except Exception as e:
@@ -121,6 +126,11 @@ class SessionManager:
                 try:
                     from backend.services.analytics_perf import clear_session_analysis_cache
                     clear_session_analysis_cache(session_id)
+                except Exception:
+                    pass
+                try:
+                    from backend.services.adaptive_questions.cache import invalidate_session
+                    invalidate_session(session_id)
                 except Exception:
                     pass
                 logger.info(f"Evicted session: {session_id}")
