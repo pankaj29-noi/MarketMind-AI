@@ -4,7 +4,7 @@ import logging
 import asyncio
 from contextlib import asynccontextmanager
 from typing import Dict, Any, Optional, List
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -150,12 +150,40 @@ class AnalyzeRequest(BaseModel):
     question: str
 
 @app.get("/health")
-async def health():
-    """Lightweight health probe for Render / load balancers."""
+async def health(response: Response):
+    """Readiness probe for Render / load balancers.
+
+    Render gates deploys on this path, so it must report "ok" only when the service
+    can actually answer a question. A live process with no compiled agent graph
+    cannot, and returning 200 for that state hides a broken deploy.
+    """
+    from backend.config import has_valid_gemini_key, has_valid_groq_key
+    from backend.services import llm_circuit
+
+    agent_ready = agent_graph is not None
+    providers = {
+        "groq": has_valid_groq_key(),
+        "gemini": has_valid_gemini_key(),
+    }
+    cooling = llm_circuit.state()
+
+    # Analytics still works without a provider via deterministic SQL, so a cooling
+    # provider is reported as degraded rather than unhealthy.
+    if not agent_ready:
+        status = "unavailable"
+        response.status_code = 503
+    elif cooling or not any(providers.values()):
+        status = "degraded"
+    else:
+        status = "ok"
+
     return {
-        "status": "ok",
+        "status": status,
         "service": "marketmind-api",
-        "agent_ready": agent_graph is not None,
+        "agent_ready": agent_ready,
+        "providers": providers,
+        "providers_cooling_down_seconds": cooling,
+        "deterministic_fallback_available": True,
     }
 
 
