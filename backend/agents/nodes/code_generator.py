@@ -219,12 +219,16 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
                         hit.pattern_id,
                         hit.confidence,
                     )
-                    return _finish(
+                    result = _finish(
                         hit.sql,
                         source=ANALYSIS_SOURCE_FALLBACK,
                         precheck_ok=ok_pat,
                         precheck_missing=miss_pat,
                     )
+                    # Records that this SQL came from a pre-validated pattern, not a
+                    # model, so the validator can skip the redundant LLM semantic check.
+                    result["analysis_artifacts"]["sql_pattern_id"] = hit.pattern_id
+                    return result
 
     # Outside DEMO MODE: still try deterministic marketplace/CSV templates for SIMPLE.
     if approach == "sql" and complexity == "SIMPLE" and retry_count == 0 and not use_analytics_demo_fallback():

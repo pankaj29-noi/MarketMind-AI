@@ -332,6 +332,17 @@ Data Preview (Top Rows):
                     )
                     status = "failed"
                     error_msg = err
+                elif (state.get("analysis_artifacts") or {}).get("sql_pattern_id"):
+                    # SQL came from the pre-validated pattern library rather than a model,
+                    # and deterministic coverage already passed. An LLM opinion here adds
+                    # latency and quota without adding a check the pattern does not carry.
+                    logger.info(
+                        "Validator skipped LLM semantic check: deterministic pattern %s "
+                        "with requirement coverage satisfied.",
+                        (state.get("analysis_artifacts") or {}).get("sql_pattern_id"),
+                    )
+                    artifacts_update["semantic_check"] = "deterministic_pattern"
+                    validation_passed = True
                 else:
                     inv = invoke_llm(messages, temperature=0.0)
                     content = (inv.get("content") or "").strip()

@@ -311,7 +311,16 @@ def invoke_llm(messages, temperature: float = 0.0) -> dict:
     Returns: {content, provider, model, analysis_source}
     analysis_source is 'groq' | 'gemini'.
     """
+    from backend.services import llm_cache
     from backend.utils.provider_errors import is_model_unavailable_error
+
+    cache_key = llm_cache.make_key(messages, temperature) if llm_cache.is_cacheable(temperature) else None
+    if cache_key:
+        cached = llm_cache.get(cache_key)
+        if cached:
+            logger.info("LLM cache hit (model=%s)", cached.get("model"))
+            cached["cache_hit"] = True
+            return cached
 
     errors: list[str] = []
     deadline = time.monotonic() + LLM_CHAIN_DEADLINE_SECONDS
@@ -336,12 +345,15 @@ def invoke_llm(messages, temperature: float = 0.0) -> dict:
                 resp = build(temperature, model=model).invoke(messages)
                 content = getattr(resp, "content", None) or str(resp)
                 logger.info("LLM invocation succeeded via %s model=%s", provider, model)
-                return {
+                payload = {
                     "content": content,
                     "provider": provider,
                     "model": model,
                     "analysis_source": source,
                 }
+                if cache_key:
+                    llm_cache.set(cache_key, payload)
+                return dict(payload, cache_hit=False)
             except Exception as exc:
                 errors.append(f"{source}[{model}]:{exc}")
                 if is_model_unavailable_error(str(exc)):

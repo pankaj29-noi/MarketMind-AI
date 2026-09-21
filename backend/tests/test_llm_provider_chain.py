@@ -10,10 +10,19 @@ from unittest.mock import patch
 import pytest
 
 import backend.config as cfg
+from backend.services import llm_cache
 from backend.utils.provider_errors import (
     is_model_unavailable_error,
     is_rate_limit_error,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_llm_cache():
+    """These tests assert provider round-trips, so a warm response cache would mask them."""
+    llm_cache.clear()
+    yield
+    llm_cache.clear()
 
 
 class _Resp:

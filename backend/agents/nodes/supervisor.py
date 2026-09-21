@@ -11,6 +11,27 @@ import json
 from langchain_core.messages import SystemMessage, HumanMessage
 from backend.config import get_llm
 
+# Markers that make a question depend on the previous turn. Only these need the LLM
+# router to resolve intent; a self-contained question does not, even mid-conversation.
+_FOLLOWUP_MARKERS = (
+    "that", "those", "these", "this one", "it ", " it?", "them", "they",
+    "same", "instead", "what about", "how about", "drill", "break it down",
+    "break that", "again", "previous", "earlier", "above", "the rest",
+    "why is", "why are", "and now", "also show",
+)
+
+
+def _looks_like_followup(question: str) -> bool:
+    """True when a question cannot stand on its own without the previous turn."""
+    q = (question or "").strip().lower()
+    if not q:
+        return True
+    if any(marker in q for marker in _FOLLOWUP_MARKERS):
+        return True
+    # Very short fragments ("by region?", "top 10") lean on prior context.
+    return len(q.split()) <= 3
+
+
 def _get_deterministic_routing(question: str) -> Optional[str]:
     q_lower = question.lower()
 
@@ -185,8 +206,9 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
     # 2. Start of turn with cached schema profile
     elif not last_worker_result:
         logger.info("Schema profile is already cached. Routing new question...")
-        has_context = bool(state.get("conversational_context"))
-        deterministic_cap = _get_deterministic_routing(state.get("question", ""))
+        question_text = state.get("question", "")
+        has_context = bool(state.get("conversational_context")) and _looks_like_followup(question_text)
+        deterministic_cap = _get_deterministic_routing(question_text)
         if deterministic_cap and not has_context:
             decision = "CONTINUE"
             reasoning = f"Deterministic routing matched question patterns: {deterministic_cap}"
@@ -229,8 +251,9 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
             # Deterministic success progression
             if worker_name == "SCHEMA":
                 logger.info("Schema extracted successfully. Checking deterministic routing first...")
-                has_context = bool(state.get("conversational_context"))
-                deterministic_cap = _get_deterministic_routing(state.get("question", ""))
+                question_text = state.get("question", "")
+                has_context = bool(state.get("conversational_context")) and _looks_like_followup(question_text)
+                deterministic_cap = _get_deterministic_routing(question_text)
                 if deterministic_cap and not has_context:
                     decision = "CONTINUE"
                     reasoning = f"Deterministic routing matched question patterns: {deterministic_cap}"
