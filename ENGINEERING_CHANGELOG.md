@@ -4,6 +4,22 @@ Every logical fix from the autonomous audit → fix → test → verify loop.
 
 ---
 
+## 2026-09-22 — `838dd3c`
+
+**feat: add built-in Demo Data (~40 rows) with verified starter questions**
+
+| | |
+|---|---|
+| **Problem** | First-time users needed a fast, clearly labeled single-table demo without the 4k CSV or multi-table marketplace seed. |
+| **Root cause** | Existing demos were either multi-table Lead marketplace or a 4k analytics CSV; no tiny on-demand Demo Data path. |
+| **Solution** | Packaged `data/demo_data.csv` (40 consistent orders). `POST /demo-data/load` creates an isolated session, warm-starts the existing schema profiler, and returns 6–8 schema-grounded questions only after read-only SQL validates + executes against that session’s DuckDB. UI adds a primary **Load Demo Data** button. Answers still come exclusively from `POST /analyze` (SQLCoder → validate → DuckDB → grounded report) — no hardcoded numbers. |
+| **Tests** | `test_demo_data.py` (load, suggestion verification, session isolation, CSV replace, unsupported-field abstention, E2E analyze vs independent DuckDB truth). |
+| **Performance** | Demo CSV is ~40 rows; not loaded at startup (request-only). |
+| **Accuracy** | Suggested questions verified before display; analyze results matched DuckDB ground truth for revenue/profit/top product. |
+| **Deploy** | Pushed to `main`. Render still suspended (manual). |
+
+---
+
 ## 2026-09-21 — `ee51601`
 
 **perf: fail fast on degraded LLM providers instead of walking dead models**

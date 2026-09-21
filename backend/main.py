@@ -386,6 +386,71 @@ async def upload_csv(
                 logger.warning(f"Failed to delete temp file: {e}")
 
 
+@app.post("/demo-data/load")
+async def load_demo_data_endpoint(_: None = Depends(limit_expensive_endpoint)):
+    """
+    Load the built-in lightweight Demo Data CSV (~40 rows) into a new session.
+
+    - Profiles schema via the existing analytics profiler
+    - Returns suggested questions derived from real columns and verified by
+      executing read-only SQL against this session's DuckDB
+    - Does NOT return hardcoded numerical answers (answers come from /analyze)
+    """
+    from backend.marketplace.demo_data_lite import (
+        DEMO_DATA_DATASET_ID,
+        DEMO_DATA_DATASET_NAME,
+        load_demo_data,
+        verify_demo_suggested_questions,
+    )
+
+    session_id = str(uuid.uuid4())
+    try:
+        result = await asyncio.to_thread(load_demo_data, session_id)
+        create_session(
+            session_id=session_id,
+            dataset_id=DEMO_DATA_DATASET_ID,
+            dataset_name=DEMO_DATA_DATASET_NAME,
+        )
+        suggested = await asyncio.to_thread(
+            verify_demo_suggested_questions,
+            session_id,
+            DEMO_DATA_DATASET_ID,
+            {
+                "columns": result.get("columns") or [],
+                "dataset_id": DEMO_DATA_DATASET_ID,
+                "row_count": result.get("row_count"),
+                "fingerprint": result.get("fingerprint"),
+            },
+        )
+        return {
+            "session_id": result["session_id"],
+            "dataset_id": result["dataset_id"],
+            "dataset_name": result["dataset_name"],
+            "row_count": result["row_count"],
+            "columns": result["columns"],
+            "tables": result["tables"],
+            "table_stats": result["table_stats"],
+            "fingerprint": result.get("fingerprint"),
+            "warm_start": result.get("warm_start"),
+            "demo_kind": result.get("demo_kind"),
+            "is_demo_data": True,
+            "suggested_questions": suggested,
+            "suggested_message": (
+                f"Demo Data · {len(suggested)} verified starter questions "
+                f"(executed against this session's DuckDB before display)."
+            ),
+        }
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error("Demo Data load failed: %s", e)
+        try:
+            session_manager.evict_session(session_id)
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=f"Failed to load Demo Data: {e}")
+
+
 @app.post("/marketplace/demo")
 async def load_marketplace_demo_endpoint(_: None = Depends(limit_expensive_endpoint)):
     """

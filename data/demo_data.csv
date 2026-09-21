@@ -1,0 +1,41 @@
+order_id,order_date,product,category,region,supplier,quantity,revenue,cost,profit
+D-001,2024-01-08,Wireless Mouse,Electronics,North,Apex Supplies,1,25.0,14.0,11.0
+D-002,2024-01-22,USB-C Hub,Electronics,West,Northwind Traders,3,144.0,84.0,60.0
+D-003,2024-02-05,Standing Desk,Furniture,East,Summit Wholesale,5,1600.0,1050.0,550.0
+D-004,2024-02-19,Office Chair,Furniture,South,Cedar Components,4,720.0,440.0,280.0
+D-005,2024-03-04,Notebook Pack,Office Supplies,North,Apex Supplies,6,72.0,33.0,39.0
+D-006,2024-03-18,Toner Cartridge,Office Supplies,West,Northwind Traders,8,520.0,304.0,216.0
+D-007,2024-04-02,Safety Gloves,Industrial,East,Summit Wholesale,7,66.5,28.0,38.5
+D-008,2024-04-16,Power Drill,Industrial,South,Cedar Components,2,190.0,110.0,80.0
+D-009,2024-05-07,Wireless Mouse,Electronics,North,Apex Supplies,4,100.0,56.0,44.0
+D-010,2024-05-21,USB-C Hub,Electronics,West,Northwind Traders,3,144.0,84.0,60.0
+D-011,2024-06-03,Standing Desk,Furniture,East,Summit Wholesale,5,1600.0,1050.0,550.0
+D-012,2024-06-17,Office Chair,Furniture,South,Cedar Components,7,1260.0,770.0,490.0
+D-013,2024-07-01,Notebook Pack,Office Supplies,North,Apex Supplies,6,72.0,33.0,39.0
+D-014,2024-07-15,Toner Cartridge,Office Supplies,West,Northwind Traders,8,520.0,304.0,216.0
+D-015,2024-08-05,Safety Gloves,Industrial,East,Summit Wholesale,3,28.5,12.0,16.5
+D-016,2024-08-19,Power Drill,Industrial,South,Cedar Components,2,190.0,110.0,80.0
+D-017,2024-09-02,Wireless Mouse,Electronics,North,Apex Supplies,4,100.0,56.0,44.0
+D-018,2024-09-16,USB-C Hub,Electronics,West,Northwind Traders,6,288.0,168.0,120.0
+D-019,2024-10-07,Standing Desk,Furniture,East,Summit Wholesale,5,1600.0,1050.0,550.0
+D-020,2024-10-21,Office Chair,Furniture,South,Cedar Components,7,1260.0,770.0,490.0
+D-021,2024-11-04,Notebook Pack,Office Supplies,North,Apex Supplies,9,108.0,49.5,58.5
+D-022,2024-11-18,Toner Cartridge,Office Supplies,West,Northwind Traders,1,65.0,38.0,27.0
+D-023,2024-12-02,Safety Gloves,Industrial,East,Summit Wholesale,3,28.5,12.0,16.5
+D-024,2024-12-16,Power Drill,Industrial,South,Cedar Components,5,475.0,275.0,200.0
+D-025,2025-01-13,Wireless Mouse,Electronics,North,Apex Supplies,4,100.0,56.0,44.0
+D-026,2025-01-27,USB-C Hub,Electronics,West,Northwind Traders,6,288.0,168.0,120.0
+D-027,2025-02-10,Standing Desk,Furniture,East,Summit Wholesale,8,2560.0,1680.0,880.0
+D-028,2025-02-24,Office Chair,Furniture,South,Cedar Components,7,1260.0,770.0,490.0
+D-029,2025-03-10,Notebook Pack,Office Supplies,North,Apex Supplies,2,24.0,11.0,13.0
+D-030,2025-03-24,Toner Cartridge,Office Supplies,West,Northwind Traders,4,260.0,152.0,108.0
+D-031,2025-04-07,Safety Gloves,Industrial,East,Summit Wholesale,3,28.5,12.0,16.5
+D-032,2025-04-21,Power Drill,Industrial,South,Cedar Components,5,475.0,275.0,200.0
+D-033,2025-05-05,Wireless Mouse,Electronics,North,Apex Supplies,7,175.0,98.0,77.0
+D-034,2025-05-19,USB-C Hub,Electronics,West,Northwind Traders,6,288.0,168.0,120.0
+D-035,2025-06-02,Standing Desk,Furniture,East,Summit Wholesale,8,2560.0,1680.0,880.0
+D-036,2025-06-16,Office Chair,Furniture,South,Cedar Components,3,540.0,330.0,210.0
+D-037,2025-07-07,Notebook Pack,Office Supplies,North,Apex Supplies,2,24.0,11.0,13.0
+D-038,2025-07-21,Toner Cartridge,Office Supplies,West,Northwind Traders,4,260.0,152.0,108.0
+D-039,2025-08-04,Safety Gloves,Industrial,East,Summit Wholesale,6,57.0,24.0,33.0
+D-040,2025-08-18,Power Drill,Industrial,South,Cedar Components,5,475.0,275.0,200.0

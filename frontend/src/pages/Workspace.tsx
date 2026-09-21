@@ -36,7 +36,9 @@ interface WorkspaceProps {
   handleFileUpload: (file: File) => void;
   onLoadMarketplaceDemo?: () => void;
   onLoadAnalyticsDemo?: () => void;
+  onLoadDemoData?: () => void;
   isLoadingAnalyticsDemo?: boolean;
+  isLoadingDemoData?: boolean;
   demoExampleCategories?: Record<string, string[]> | null;
   onUploadClick: () => void;
   history: any[];
@@ -73,7 +75,7 @@ interface WorkspaceProps {
 
 export const Workspace: React.FC<WorkspaceProps> = ({
   session, hasDataset, datasetName, rowCount, columns, tables,
-  isUploading, isLoadingDemo, uploadError, handleFileUpload, onLoadMarketplaceDemo, onLoadAnalyticsDemo, isLoadingAnalyticsDemo, demoExampleCategories, onUploadClick,
+  isUploading, isLoadingDemo, uploadError, handleFileUpload, onLoadMarketplaceDemo, onLoadAnalyticsDemo, onLoadDemoData, isLoadingAnalyticsDemo, isLoadingDemoData, demoExampleCategories, onUploadClick,
   history, onSelectHistory, selectedHistoryId,
   isLeftSidebarCollapsed, onToggleLeftSidebar,
   isRightSidebarCollapsed, onToggleRightSidebar,
@@ -241,18 +243,45 @@ export const Workspace: React.FC<WorkspaceProps> = ({
                               Agentic B2B Marketplace Intelligence Platform
                             </p>
                             <p className="text-base text-muted-foreground max-w-md mx-auto leading-relaxed">
-                              Load the marketplace demo or upload a CSV. Ask about buyers, suppliers, products, leads, and orders in plain English.
+                              Start with Demo Data, load a marketplace demo, or upload a CSV. Ask questions in plain English.
                             </p>
                           </div>
 
-                          {(onLoadAnalyticsDemo || onLoadMarketplaceDemo) && (
+                          {(onLoadDemoData || onLoadAnalyticsDemo || onLoadMarketplaceDemo) && (
                             <div className="flex w-full flex-col gap-2">
+                              {onLoadDemoData && (
+                                <button
+                                  type="button"
+                                  onClick={onLoadDemoData}
+                                  disabled={
+                                    isUploading ||
+                                    isLoadingDemo ||
+                                    !!isLoadingAnalyticsDemo ||
+                                    !!isLoadingDemoData
+                                  }
+                                  className="group flex w-full items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3.5 text-sm font-semibold text-primary transition-all hover:bg-primary hover:text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  {isLoadingDemoData ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Sparkles className="h-4 w-4" />
+                                  )}
+                                  {isLoadingDemoData
+                                    ? 'Loading Demo Data…'
+                                    : 'Load Demo Data'}
+                                </button>
+                              )}
                               {onLoadAnalyticsDemo && (
                                 <button
                                   type="button"
                                   onClick={onLoadAnalyticsDemo}
-                                  disabled={isUploading || isLoadingDemo || !!isLoadingAnalyticsDemo}
-                                  className="group flex w-full items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3.5 text-sm font-semibold text-primary transition-all hover:bg-primary hover:text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                                  disabled={
+                                    isUploading ||
+                                    isLoadingDemo ||
+                                    !!isLoadingAnalyticsDemo ||
+                                    !!isLoadingDemoData
+                                  }
+                                  className="group flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-background/60 px-4 py-3 text-sm font-medium text-muted-foreground transition-all hover:border-primary/40 hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   {isLoadingAnalyticsDemo ? (
                                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -268,7 +297,12 @@ export const Workspace: React.FC<WorkspaceProps> = ({
                                 <button
                                   type="button"
                                   onClick={onLoadMarketplaceDemo}
-                                  disabled={isUploading || isLoadingDemo || !!isLoadingAnalyticsDemo}
+                                  disabled={
+                                    isUploading ||
+                                    isLoadingDemo ||
+                                    !!isLoadingAnalyticsDemo ||
+                                    !!isLoadingDemoData
+                                  }
                                   className="group flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-background/60 px-4 py-3 text-sm font-medium text-muted-foreground transition-all hover:border-primary/40 hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   {isLoadingDemo ? (
@@ -292,7 +326,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
                             onFileSelect={handleFileUpload}
                             loading={isUploading}
                             accept=".csv"
-                            disabled={isLoadingDemo}
+                            disabled={isLoadingDemo || !!isLoadingDemoData || !!isLoadingAnalyticsDemo}
                           />
                           {uploadError && (
                             <div className="text-sm font-medium text-destructive bg-destructive/10 border border-destructive/20 rounded-xl p-4 text-center">

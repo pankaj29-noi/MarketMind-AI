@@ -33,6 +33,7 @@ export const App: React.FC = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isLoadingDemo, setIsLoadingDemo] = useState(false);
   const [isLoadingAnalyticsDemo, setIsLoadingAnalyticsDemo] = useState(false);
+  const [isLoadingDemoData, setIsLoadingDemoData] = useState(false);
   const [demoExampleCategories, setDemoExampleCategories] = useState<Record<string, string[]> | null>(null);
   const [uploadError, setUploadError] = useState('');
 
@@ -202,6 +203,70 @@ export const App: React.FC = () => {
       toast(err.message || 'Demo load failed', 'error');
     } finally {
       setIsLoadingDemo(false);
+    }
+  };
+
+  const handleLoadDemoData = async () => {
+    setIsLoadingDemoData(true);
+    setUploadError('');
+    try {
+      const response = await fetch(`${API_BASE}/demo-data/load`, {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({}));
+        throw new Error(detail.detail || 'Failed to load Demo Data.');
+      }
+      const data: UploadResponse & {
+        is_demo_data?: boolean;
+        suggested_questions?: Array<{
+          id: string;
+          question: string;
+          intent?: string;
+          verified?: boolean;
+          tier?: string;
+        }>;
+        suggested_message?: string;
+        warm_start?: unknown;
+      } = await response.json();
+
+      applySession(data, { adaptive: false });
+      clearSuggestions();
+      setDemoExampleCategories(null);
+
+      const verified = (data.suggested_questions || []).filter((q) => q.verified !== false);
+      const mapped: SuggestedQuestion[] = verified.map((q) => ({
+        id: q.id,
+        text: q.question,
+        category: 'Demo Data',
+        difficulty: 'easy',
+        tier: (q.tier as SuggestedQuestion['tier']) || 'quick',
+        confidence: 1,
+        intent: q.intent,
+        validation_status: 'verified',
+        why: 'Verified by executing read-only SQL against Demo Data before display.',
+      }));
+      setSuggestedQuestions(mapped);
+      setSuggestedTiers([{ tier: 'quick', questions: mapped }]);
+      setSuggestedProfile({
+        row_count: data.row_count,
+        column_count: data.columns?.length,
+      });
+      setSuggestedMessage(
+        data.suggested_message ||
+          `Demo Data · ${mapped.length} verified starter questions`
+      );
+      setUseAdaptiveSuggestions(true);
+
+      toast(
+        `Demo Data loaded — ${data.row_count?.toLocaleString() ?? 0} rows · ${mapped.length} verified questions`,
+        'success'
+      );
+    } catch (err: any) {
+      setUploadError(err.message || 'Error loading Demo Data.');
+      toast(err.message || 'Demo Data load failed', 'error');
+    } finally {
+      setIsLoadingDemoData(false);
     }
   };
 
@@ -462,10 +527,12 @@ export const App: React.FC = () => {
         isUploading={isUploading}
         isLoadingDemo={isLoadingDemo}
         isLoadingAnalyticsDemo={isLoadingAnalyticsDemo}
+        isLoadingDemoData={isLoadingDemoData}
         uploadError={uploadError}
         handleFileUpload={handleFileUpload}
         onLoadMarketplaceDemo={handleLoadMarketplaceDemo}
         onLoadAnalyticsDemo={handleLoadAnalyticsDemo}
+        onLoadDemoData={handleLoadDemoData}
         demoExampleCategories={demoExampleCategories}
         onUploadClick={() => fileInputRef.current?.click()}
         history={sidebarHistory}

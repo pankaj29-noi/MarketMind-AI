@@ -27,6 +27,7 @@ MarketMind AI connects those pieces:
 
 Natural language → LangGraph workflow → SQL/Python analysis → visualization → business insights
 
+- One-click **Load Demo Data** (~40-row starter dataset, clearly labeled, verified questions)
 - One-click **Load Marketplace Demo** (DuckDB tables: categories, suppliers, buyers, products, leads, orders)
 - Cross-table joins for GMV, conversion, regional demand, supplier performance
 - Charts, tables, and narrative reports
@@ -257,6 +258,7 @@ Tests cover supplier ranking, demo extractor, product matching, Lead workflow st
 
 | Method | Path | Purpose |
 | :--- | :--- | :--- |
+| `POST` | `/demo-data/load` | Load built-in Demo Data (~40 rows) + verified suggestions |
 | `POST` | `/marketplace/demo` | Load marketplace demo |
 | `POST` | `/analyze` | Conversational analytics |
 | `POST` | `/marketplace/lead/analyze` | Lead Intelligence |
