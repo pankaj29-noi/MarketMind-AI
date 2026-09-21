@@ -59,4 +59,15 @@ CMAKE_ARGS="-DGGML_METAL=on" pip install "llama-cpp-python>=0.2.90" huggingface-
 ./scripts/download_sqlcoder.sh
 ```
 
-The Llama instance is loaded **once per process** and reused across requests.
+## Previous vs new NL→SQL path
+
+| | Previous | Now |
+|---|---|---|
+| Primary SQL generator | Groq → Gemini API | Local Defog SQLCoder (llama.cpp/Metal) |
+| Schema sent | LLM-friendly text + samples | CREATE TABLE DDL (+ tiny samples) |
+| CSV rows to model | No | Still no |
+| Pre-exec schema gate | Sandbox only (quoted cols) | Codegen + sandbox; **quoted + unquoted** |
+| Model lifecycle | N/A (API) | Singleton, optional warmup, timeout |
+| Fallback | Deterministic templates | SQLCoder → API → deterministic |
+| Cloud deploy | API keys | `SQLCODER_ENABLED=false` on Render (free tier) |
+

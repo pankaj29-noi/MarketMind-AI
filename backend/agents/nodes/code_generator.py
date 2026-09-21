@@ -85,7 +85,18 @@ Plan Steps:
 """
 
 
-def _strip_code_fences(code: str) -> str:
+def _strip_code_fences(code) -> str:
+    # Some providers (esp. Gemini) return content as a list of parts.
+    if isinstance(code, list):
+        parts: List[str] = []
+        for part in code:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict):
+                parts.append(str(part.get("text") or part.get("content") or ""))
+            else:
+                parts.append(str(getattr(part, "text", None) or part))
+        code = "\n".join(p for p in parts if p)
     code = (code or "").strip()
     if code.startswith("```"):
         lines = code.split("\n")
@@ -94,6 +105,12 @@ def _strip_code_fences(code: str) -> str:
         if lines and lines[-1].startswith("```"):
             lines = lines[:-1]
         code = "\n".join(lines).strip()
+    # If the model emitted multiple statements, keep the first read-only query only.
+    if ";" in code:
+        first = code.split(";", 1)[0].strip()
+        upper = first.upper()
+        if upper.startswith("SELECT") or upper.startswith("WITH"):
+            code = first
     return code
 
 
@@ -229,35 +246,57 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
             return outcome
 
     # FAST PATH: schema-adaptive pattern SQL for SIMPLE questions (0 LLM).
-    if approach == "sql" and complexity == "SIMPLE" and retry_count == 0:
+    # Also allow high-precision percent-of-total templates on COMPLEX questions —
+    # those patterns are exact and prevent ranking-instead-of-proportion regressions.
+    if approach == "sql" and retry_count == 0:
         cols = (schema_profile or {}).get("columns") or []
         if isinstance(cols, list) and cols:
             hit = try_simple_deterministic_sql(question, table_name, cols)
             if hit and hit.sql:
-                ok_pat, miss_pat = check_requirement_coverage(question, hit.sql, columns=None)
-                if ok_pat or not miss_pat:
-                    logger.info(
-                        "Fast-path pattern SQL (%s, conf=%.2f) for SIMPLE question.",
-                        hit.pattern_id,
-                        hit.confidence,
-                    )
-                    result = _finish(
-                        hit.sql,
-                        source=ANALYSIS_SOURCE_FALLBACK,
-                        precheck_ok=ok_pat,
-                        precheck_missing=miss_pat,
-                    )
-                    # Records that this SQL came from a pre-validated pattern, not a
-                    # model, so the validator can skip the redundant LLM semantic check.
-                    result["analysis_artifacts"]["sql_pattern_id"] = hit.pattern_id
-                    return result
+                allow_pattern = (
+                    complexity == "SIMPLE"
+                    or (hit.pattern_id or "").startswith("PERCENT_OF_TOTAL")
+                )
+                if allow_pattern:
+                    ok_pat, miss_pat = check_requirement_coverage(question, hit.sql, columns=None)
+                    schema_for_pat = dict(schema_profile or {})
+                    if table_name and not schema_for_pat.get("dataset_id"):
+                        schema_for_pat["dataset_id"] = table_name
+                    from backend.services.sql.sql_quality_validator import validate_sql as _vs
+
+                    _v = _vs(hit.sql, schema_for_pat, question)
+                    schema_ok_pat = bool(_v.get("is_valid"))
+                    schema_diag_pat = _v.get("diagnostics") or ""
+                    if ok_pat and schema_ok_pat:
+                        logger.info(
+                            "Fast-path pattern SQL (%s, conf=%.2f) for %s question.",
+                            hit.pattern_id,
+                            hit.confidence,
+                            complexity,
+                        )
+                        result = _finish(
+                            hit.sql,
+                            source=ANALYSIS_SOURCE_FALLBACK,
+                            precheck_ok=ok_pat,
+                            precheck_missing=miss_pat,
+                        )
+                        result["analysis_artifacts"]["sql_pattern_id"] = hit.pattern_id
+                        return result
+                    if not schema_ok_pat:
+                        logger.warning("Pattern SQL failed schema validation: %s", schema_diag_pat)
 
     # Outside DEMO MODE: still try deterministic marketplace/CSV templates for SIMPLE.
     if approach == "sql" and complexity == "SIMPLE" and retry_count == 0 and not use_analytics_demo_fallback():
         fallback = resolve_analytics_fallback(question, schema_profile or {}, dataset_id)
         if fallback.sql:
             ok_fb, miss_fb = check_requirement_coverage(question, fallback.sql, columns=None)
-            if ok_fb:
+            from backend.services.sql.sql_quality_validator import validate_sql as _vs2
+
+            schema_for_fb = dict(schema_profile or {})
+            if table_name and not schema_for_fb.get("dataset_id"):
+                schema_for_fb["dataset_id"] = table_name
+            _vf = _vs2(fallback.sql, schema_for_fb, question)
+            if ok_fb and _vf.get("is_valid"):
                 logger.info("Fast-path deterministic fallback SQL for SIMPLE question.")
                 return _finish(
                     fallback.sql,
@@ -304,60 +343,70 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
     sqlcoder_attempted = False
     sqlcoder_last_sql = ""
     sqlcoder_last_error = ""
-    if approach == "sql":
-        from backend.services.sql.sqlcoder_service import (
-            generate_sql_with_sqlcoder,
-            sqlcoder_enabled,
-            sqlcoder_prefer_over_api,
-        )
 
-        if sqlcoder_enabled() and sqlcoder_prefer_over_api():
-            sqlcoder_attempted = True
-            sc = generate_sql_with_sqlcoder(
-                question,
-                schema_profile or {},
-                table_name=table_name or "",
-                requirement_contract=requirement_contract,
-            )
-            if sc.ok and sc.sql:
-                sqlcoder_last_sql = sc.sql
-                accepted, miss_sc, reason = _accept_sqlcoder(sc.sql, model=sc.model)
-                if accepted is not None:
-                    logger.info(
-                        "Generated SQL via local SQLCoder (%s); schema+semantic checks passed.",
-                        sc.model,
-                    )
-                    return accepted
-                # One local regenerate with explicit coverage feedback (still SQLCoder).
-                if reason == "semantic_incomplete" and miss_sc:
+    def _run_sqlcoder_attempt() -> Optional[Dict[str, Any]]:
+        nonlocal sqlcoder_attempted, sqlcoder_last_sql, sqlcoder_last_error
+        from backend.services.sql.sqlcoder_service import generate_sql_with_sqlcoder
+
+        sqlcoder_attempted = True
+        sc = generate_sql_with_sqlcoder(
+            question,
+            schema_profile or {},
+            table_name=table_name or "",
+            requirement_contract=requirement_contract,
+        )
+        if sc.ok and sc.sql:
+            sqlcoder_last_sql = sc.sql
+            accepted, miss_sc, reason = _accept_sqlcoder(sc.sql, model=sc.model)
+            if accepted is not None:
+                logger.info(
+                    "Generated SQL via local SQLCoder (%s); schema+semantic checks passed.",
+                    sc.model,
+                )
+                return accepted
+            # One local regenerate on semantic OR schema rejection.
+            if reason and (miss_sc or reason != "semantic_incomplete"):
+                if reason == "semantic_incomplete":
                     feedback = generation_precheck_feedback(question, miss_sc, req)
-                    regen_contract = (
-                        f"{requirement_contract}\n\nPREVIOUS SQL REJECTED:\n{sc.sql}\n"
-                        f"FIX REQUIRED:\n{feedback}"
-                    )
-                    sc2 = generate_sql_with_sqlcoder(
-                        question,
-                        schema_profile or {},
-                        table_name=table_name or "",
-                        requirement_contract=regen_contract,
-                    )
-                    if sc2.ok and sc2.sql:
-                        sqlcoder_last_sql = sc2.sql
-                        accepted2, _, _ = _accept_sqlcoder(sc2.sql, model=sc2.model)
-                        if accepted2 is not None:
-                            logger.info("SQLCoder regenerate passed schema+semantic checks.")
-                            return accepted2
-                sqlcoder_last_error = reason or "validation_failed"
-                logger.warning(
-                    "SQLCoder SQL rejected (%s); falling through to API/deterministic if available.",
-                    sqlcoder_last_error,
+                else:
+                    feedback = f"Schema/quality validation failed:\n{reason}"
+                regen_contract = (
+                    f"{requirement_contract}\n\nPREVIOUS SQL REJECTED:\n{sc.sql}\n"
+                    f"FIX REQUIRED:\n{feedback}\n"
+                    "Use ONLY columns that exist in the schema DDL."
                 )
-            else:
-                sqlcoder_last_error = sc.error or "empty_sql"
-                logger.warning(
-                    "SQLCoder unavailable or empty (%s); using API/deterministic fallback if needed.",
-                    sqlcoder_last_error,
+                sc2 = generate_sql_with_sqlcoder(
+                    question,
+                    schema_profile or {},
+                    table_name=table_name or "",
+                    requirement_contract=regen_contract,
                 )
+                if sc2.ok and sc2.sql:
+                    sqlcoder_last_sql = sc2.sql
+                    accepted2, _, _ = _accept_sqlcoder(sc2.sql, model=sc2.model)
+                    if accepted2 is not None:
+                        logger.info("SQLCoder regenerate passed schema+semantic checks.")
+                        return accepted2
+            sqlcoder_last_error = reason or "validation_failed"
+            logger.warning(
+                "SQLCoder SQL rejected (%s); falling through.",
+                sqlcoder_last_error,
+            )
+        else:
+            sqlcoder_last_error = sc.error or "empty_sql"
+            logger.warning(
+                "SQLCoder unavailable or empty (%s).",
+                sqlcoder_last_error,
+            )
+        return None
+
+    if approach == "sql":
+        from backend.services.sql.sqlcoder_service import should_try_sqlcoder_first
+
+        if should_try_sqlcoder_first():
+            hit = _run_sqlcoder_attempt()
+            if hit is not None:
+                return hit
 
     # DEMO MODE: try deterministic schema-aware SQL when no generative path remains.
     if approach == "sql" and use_analytics_demo_fallback():
@@ -502,18 +551,23 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
         # Lightweight deterministic pre-check (SQL only; do not execute)
         if approach == "sql" and code:
             ok_cov, missing = _semantic_precheck(code)
-            if not ok_cov:
+            schema_ok, schema_diag = _schema_validate(code)
+            if not ok_cov or not schema_ok:
                 logger.warning(
-                    "SQL generation pre-check failed (semantic_incomplete). Missing=%s. Regenerating once.",
-                    missing,
+                    "API SQL pre-check failed (semantic_ok=%s schema_ok=%s). Regenerating once.",
+                    ok_cov,
+                    schema_ok,
                 )
-                feedback = generation_precheck_feedback(question, missing, req)
+                if not ok_cov:
+                    feedback = generation_precheck_feedback(question, missing, req)
+                else:
+                    feedback = f"Schema/quality validation failed:\n{schema_diag}"
                 regen_messages = list(messages) + [
                     HumanMessage(
                         content=(
                             f"{feedback}\n\n"
-                            f"Previous incomplete SQL:\n{code}\n\n"
-                            "Output ONLY corrected raw SQL."
+                            f"Previous incomplete/invalid SQL:\n{code}\n\n"
+                            "Output ONLY corrected raw SQL using real schema columns."
                         )
                     )
                 ]
@@ -529,27 +583,41 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
                     logger.warning("Pre-check regeneration call failed: %s", regen_err)
 
                 ok_cov, missing = _semantic_precheck(code)
-                if not ok_cov:
-                    feedback = generation_precheck_feedback(question, missing, req)
-                    logger.warning(
-                        "SQL still fails semantic pre-check after regenerate. Missing=%s",
-                        missing,
+                schema_ok, schema_diag = _schema_validate(code)
+                if not ok_cov or not schema_ok:
+                    # Optional: local SQLCoder rescue when API-first mode is configured
+                    from backend.services.sql.sqlcoder_service import should_try_sqlcoder_as_fallback
+
+                    if should_try_sqlcoder_as_fallback() and not sqlcoder_attempted:
+                        rescue = _run_sqlcoder_attempt()
+                        if rescue is not None:
+                            return rescue
+
+                    feedback = (
+                        generation_precheck_feedback(question, missing, req)
+                        if not ok_cov
+                        else schema_diag
                     )
-                    # Do not pass incomplete SQL downstream as success — use existing retry path
+                    logger.warning(
+                        "SQL still fails pre-check after regenerate. semantic_missing=%s schema=%s",
+                        missing,
+                        schema_diag,
+                    )
                     return _finish(
                         "",
                         source=source,
                         failed=True,
                         failure={
-                            "failure_type": "semantic_incomplete",
+                            "failure_type": (
+                                "semantic_incomplete" if not ok_cov else "structural"
+                            ),
                             "error_message": feedback,
                             "code_context": code,
                             "expected_vs_actual": (
-                                "semantic_incomplete. "
+                                "precheck_failed. "
                                 f"Missing requirements: {list(missing)}. "
-                                "Suggested Retry Target: code_generator. "
-                                "Suggested Retry Strategy: Satisfy the SEMANTIC REQUIREMENTS "
-                                "contract (dimensions, metrics, derived metrics, rankings)."
+                                f"Schema: {schema_diag}. "
+                                "Suggested Retry Target: code_generator."
                             ),
                         },
                         provider=provider,
@@ -559,7 +627,7 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
                     )
 
             logger.info(
-                "Generated SQL passed semantic pre-check via %s (%s).",
+                "Generated SQL passed schema+semantic pre-check via %s (%s).",
                 provider,
                 model,
             )
@@ -606,8 +674,15 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
             or "all llm providers failed" in error_str
         )
 
-        # Provider/auth failure → deterministic fallback for any loaded dataset
+        # Provider/auth failure → try SQLCoder (API-first mode) then deterministic
         if is_provider and approach == "sql":
+            from backend.services.sql.sqlcoder_service import should_try_sqlcoder_as_fallback
+
+            if should_try_sqlcoder_as_fallback() and not sqlcoder_attempted:
+                rescue = _run_sqlcoder_attempt()
+                if rescue is not None:
+                    return rescue
+
             fallback = resolve_analytics_fallback(question, schema_profile or {}, dataset_id)
             if fallback.sql:
                 logger.warning(

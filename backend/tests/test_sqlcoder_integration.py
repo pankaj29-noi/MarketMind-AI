@@ -50,6 +50,9 @@ def test_prompt_contains_schema_and_requirements_not_csv_rows():
     assert "SEMANTIC REQUIREMENTS" in prompt
     assert "[SQL]" in prompt
     assert "row1," not in prompt
+    # Requirements must not be stuffed inside the Defog [QUESTION] markers
+    q_block = prompt.split("[QUESTION]", 1)[1].split("[/QUESTION]", 1)[0]
+    assert "SEMANTIC REQUIREMENTS" not in q_block
 
 
 @pytest.mark.parametrize(
@@ -116,10 +119,7 @@ def test_code_generator_uses_sqlcoder_before_api(monkeypatch):
         "backend.services.question_ir.format_ir_for_llm",
         return_value="",
     ), patch(
-        "backend.services.sql.sqlcoder_service.sqlcoder_enabled",
-        return_value=True,
-    ), patch(
-        "backend.services.sql.sqlcoder_service.sqlcoder_prefer_over_api",
+        "backend.services.sql.sqlcoder_service.should_try_sqlcoder_first",
         return_value=True,
     ), patch(
         "backend.services.sql.sqlcoder_service.generate_sql_with_sqlcoder",
@@ -162,10 +162,7 @@ def test_code_generator_falls_back_to_api_when_sqlcoder_rejects(monkeypatch):
         "backend.services.question_ir.format_ir_for_llm",
         return_value="",
     ), patch(
-        "backend.services.sql.sqlcoder_service.sqlcoder_enabled",
-        return_value=True,
-    ), patch(
-        "backend.services.sql.sqlcoder_service.sqlcoder_prefer_over_api",
+        "backend.services.sql.sqlcoder_service.should_try_sqlcoder_first",
         return_value=True,
     ), patch(
         "backend.services.sql.sqlcoder_service.generate_sql_with_sqlcoder",
@@ -256,10 +253,7 @@ def test_sqlcoder_query_categories_pass_schema_and_pipeline(monkeypatch, kind, q
         "backend.services.question_ir.format_ir_for_llm",
         return_value="",
     ), patch(
-        "backend.services.sql.sqlcoder_service.sqlcoder_enabled",
-        return_value=True,
-    ), patch(
-        "backend.services.sql.sqlcoder_service.sqlcoder_prefer_over_api",
+        "backend.services.sql.sqlcoder_service.should_try_sqlcoder_first",
         return_value=True,
     ), patch(
         "backend.services.sql.sqlcoder_service.generate_sql_with_sqlcoder",

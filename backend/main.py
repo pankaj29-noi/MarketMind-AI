@@ -103,7 +103,24 @@ async def lifespan(app: FastAPI):
     cleanup_task = asyncio.create_task(session_cleanup_scheduler())
     
     logger.info("FastAPI backend startup procedures completed.")
-    
+
+    # Optional SQLCoder warmup (loads GGUF once; skips when disabled / missing).
+    if (os.getenv("SQLCODER_WARMUP_ON_START") or "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    ):
+        try:
+            from backend.services.sql.sqlcoder_service import get_sqlcoder_llm, sqlcoder_enabled
+
+            if sqlcoder_enabled():
+                logger.info("Warming up local SQLCoder model…")
+                get_sqlcoder_llm()
+                logger.info("SQLCoder warmup complete.")
+        except Exception as warm_err:
+            logger.warning("SQLCoder warmup skipped: %s", warm_err)
+
     yield
     
     # Shutdown procedures
@@ -166,7 +183,7 @@ async def health(response: Response):
     providers = {
         "groq": has_valid_groq_key(),
         "gemini": has_valid_gemini_key(),
-        "sqlcoder": bool(sqlcoder_configured()),
+        "sqlcoder": bool(sqlcoder.get("available")),
     }
     cooling = llm_circuit.state()
 
@@ -187,9 +204,12 @@ async def health(response: Response):
         "providers": providers,
         "sqlcoder": {
             "enabled": sqlcoder.get("enabled"),
+            "available": sqlcoder.get("available"),
             "loaded": sqlcoder.get("loaded"),
             "backend": sqlcoder.get("backend"),
             "platform": sqlcoder.get("platform"),
+            "try_first": sqlcoder.get("try_first"),
+            "load_error": sqlcoder.get("load_error"),
         },
         "providers_cooling_down_seconds": cooling,
         "deterministic_fallback_available": True,

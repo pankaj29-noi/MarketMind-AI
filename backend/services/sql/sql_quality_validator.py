@@ -1,5 +1,8 @@
+import logging
 import re
+from typing import Any, Dict, List, Optional, Set
 
+logger = logging.getLogger(__name__)
 
 # Aggregate functions recognised when checking GROUP BY correctness
 _AGG_FUNC_RE = (
@@ -8,10 +11,232 @@ _AGG_FUNC_RE = (
     r"QUANTILE_CONT|QUANTILE_DISC|ANY_VALUE|ARG_MAX|ARG_MIN|"
     r"STRING_AGG|LIST|FIRST|LAST)\s*\("
 )
-import logging
-from typing import Dict, Any, List
 
-logger = logging.getLogger(__name__)
+# SQL / DuckDB tokens that must never be treated as column names
+_SQL_KEYWORDS: Set[str] = {
+    "select", "from", "where", "group", "by", "order", "having", "limit", "offset",
+    "as", "on", "join", "left", "right", "inner", "outer", "full", "cross", "with",
+    "and", "or", "not", "in", "is", "null", "true", "false", "case", "when", "then",
+    "else", "end", "distinct", "all", "union", "except", "intersect", "asc", "desc",
+    "nulls", "first", "last", "between", "like", "ilike", "exists", "cast", "over",
+    "partition", "rows", "range", "unbounded", "preceding", "following", "current",
+    "row", "qualify", "filter", "window", "recursive", "values", "using", "natural",
+    "lateral", "tablesample", "pivot", "unpivot", "exclude", "replace", "include",
+    "if", "elseif", "elsif", "into", "set", "returning", "fetch", "only", "ties",
+    "percent", "top", "bottom", "of", "at", "zone", "interval", "date", "time",
+    "timestamp", "year", "month", "day", "hour", "minute", "second", "week",
+    "quarter", "epoch", "timezone", "both", "leading", "trailing", "trim",
+    "extract", "truncate", "trunc", "date_trunc", "date_part", "strptime",
+    "strftime", "age", "now", "current_date", "current_timestamp", "localtime",
+    "localtimestamp", "coalesce", "nullif", "greatest", "least", "abs", "round",
+    "floor", "ceil", "ceiling", "power", "sqrt", "exp", "ln", "log", "log10",
+    "mod", "div", "sign", "pi", "random", "lower", "upper", "length", "len",
+    "substr", "substring", "replace", "concat", "concat_ws", "string_agg",
+    "list_agg", "array_agg", "count", "sum", "avg", "min", "max", "median",
+    "mode", "stddev", "variance", "corr", "rank", "dense_rank", "row_number",
+    "ntile", "lag", "lead", "first_value", "last_value", "nth_value",
+    "percentile_cont", "percentile_disc", "quantile", "any_value", "arg_max",
+    "arg_min", "bool_and", "bool_or", "bit_and", "bit_or", "generate_series",
+    "unnest", "json_extract", "struct", "map", "list", "array", "map_keys",
+    "map_values", "typeof", "try_cast", "try", "pragma", "explain", "analyze",
+    "describe", "show", "tables", "columns", "databases", "schemas", "views",
+    "functions", "indexes", "settings", "macro", "create", "drop", "alter",
+    "insert", "update", "delete", "copy", "attach", "detach", "use", "force",
+    "integer", "bigint", "smallint", "tinyint", "hugeint", "ubigint", "uint",
+    "double", "float", "real", "decimal", "numeric", "varchar", "char", "text",
+    "string", "blob", "boolean", "bool", "uuid", "json", "hugeint",
+}
+
+_IDENT_RE = re.compile(r"\b([A-Za-z_][\w$]*)\b")
+_QUALIFIED_RE = re.compile(
+    r'(?:"([^"]+)"|([A-Za-z_][\w$]*))\s*\.\s*(?:"([^"]+)"|([A-Za-z_][\w$]*))'
+)
+_ALIAS_RE = re.compile(
+    r"\bAS\s+(?:\"([^\"]+)\"|([A-Za-z_][\w$]*))",
+    re.IGNORECASE,
+)
+_CTE_RE = re.compile(
+    r"\b(?:WITH|,)\s+(?:RECURSIVE\s+)?(?:\"([^\"]+)\"|([A-Za-z_][\w$]*))\s+AS\s*\(",
+    re.IGNORECASE,
+)
+_FROM_ALIAS_RE = re.compile(
+    r"\b(?:FROM|JOIN)\s+(?:\"([^\"]+)\"|([A-Za-z_][\w$]*))"
+    r"(?:\s+(?:AS\s+)?(?:\"([^\"]+)\"|([A-Za-z_][\w$]*)))?",
+    re.IGNORECASE,
+)
+
+
+def _strip_sql_literals(sql: str) -> str:
+    """Replace single-quoted string literals (keep double-quoted identifiers)."""
+    out: List[str] = []
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch == "'":
+            out.append(" ")
+            i += 1
+            while i < n:
+                if sql[i] == "'":
+                    if i + 1 < n and sql[i + 1] == "'":
+                        i += 2
+                        continue
+                    i += 1
+                    break
+                i += 1
+            out.append(" ")
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
+def _schema_column_names(schema: Dict[str, Any]) -> Set[str]:
+    names: Set[str] = set()
+    if schema.get("multi_table") and schema.get("tables"):
+        for table in schema["tables"]:
+            tname = (table.get("name") or "").lower()
+            if tname:
+                names.add(tname)
+            for col in table.get("columns") or []:
+                cname = (col.get("name") or "").lower()
+                if cname:
+                    names.add(cname)
+                    if tname:
+                        names.add(f"{tname}.{cname}")
+    else:
+        for col in schema.get("columns") or []:
+            cname = (col.get("name") or "").lower()
+            if cname:
+                names.add(cname)
+        for key in ("dataset_id", "table_name", "duckdb_table"):
+            name = schema.get(key)
+            if isinstance(name, str) and name:
+                names.add(name.lower())
+    return names
+
+
+def _collect_query_aliases(query: str) -> Set[str]:
+    aliases: Set[str] = set()
+    for m in _ALIAS_RE.finditer(query):
+        alias = (m.group(1) or m.group(2) or "").lower()
+        if alias:
+            aliases.add(alias)
+    for m in _CTE_RE.finditer(query):
+        name = (m.group(1) or m.group(2) or "").lower()
+        if name:
+            aliases.add(name)
+    for m in _FROM_ALIAS_RE.finditer(query):
+        table = (m.group(1) or m.group(2) or "").lower()
+        alias = (m.group(3) or m.group(4) or "").lower()
+        if table:
+            aliases.add(table)
+        if alias:
+            aliases.add(alias)
+    return aliases
+
+
+def find_unknown_column_references(query: str, schema: Dict[str, Any]) -> List[str]:
+    """
+    Return unknown column/table identifiers (quoted and unquoted) vs schema.
+
+    Allows SELECT/FROM aliases and CTEs. Designed to catch hallucinated columns
+    like `SELECT revenue FROM t` when only `sales_amount` exists.
+    """
+    if not schema or not (("columns" in schema) or schema.get("multi_table")):
+        return []
+
+    valid = _schema_column_names(schema)
+    aliases = _collect_query_aliases(query)
+    relations: Set[str] = set(aliases)
+
+    # Relations named in FROM/JOIN are not column refs (even if outside schema list —
+    # DuckDB will reject unknown tables at execute time).
+    for m in _FROM_ALIAS_RE.finditer(query):
+        table = (m.group(1) or m.group(2) or "").lower()
+        alias = (m.group(3) or m.group(4) or "").lower()
+        if table:
+            relations.add(table)
+        if alias:
+            relations.add(alias)
+
+    known_tables = {
+        n for n in valid
+        if "." not in n and (
+            schema.get("multi_table")
+            or n in {
+                (schema.get("dataset_id") or "").lower(),
+                (schema.get("table_name") or "").lower(),
+                (schema.get("duckdb_table") or "").lower(),
+            }
+        )
+    }
+    if schema.get("multi_table") and schema.get("tables"):
+        known_tables = {(t.get("name") or "").lower() for t in schema["tables"] if t.get("name")}
+
+    issues: List[str] = []
+    seen: Set[str] = set()
+
+    if schema.get("multi_table") and known_tables:
+        for m in _FROM_ALIAS_RE.finditer(query):
+            table = (m.group(1) or m.group(2) or "").lower()
+            if table and table not in known_tables and table not in aliases:
+                key = f"table:{table}"
+                if key not in seen:
+                    seen.add(key)
+                    issues.append(f'Invalid table reference: "{table}"')
+
+    # Double-quoted identifiers
+    for col in re.findall(r'"([^"]+)"', query):
+        low = col.lower()
+        if low in valid or low in aliases or low in relations or low in _SQL_KEYWORDS:
+            continue
+        if low not in seen:
+            seen.add(low)
+            issues.append(f'Invalid column reference: "{col}"')
+
+    # Qualified refs: alias.col or table.col
+    for m in _QUALIFIED_RE.finditer(query):
+        left = (m.group(1) or m.group(2) or "").lower()
+        right = (m.group(3) or m.group(4) or "").lower()
+        if not right or right in _SQL_KEYWORDS:
+            continue
+        base_ok = right in valid or f"{left}.{right}" in valid
+        if left in relations or left in valid:
+            if not base_ok and right not in aliases and right not in relations:
+                key = f"{left}.{right}"
+                if key not in seen:
+                    seen.add(key)
+                    issues.append(f'Invalid column reference: "{left}.{right}"')
+        elif right not in valid and right not in aliases and right not in relations:
+            key = f"{left}.{right}"
+            if key not in seen:
+                seen.add(key)
+                issues.append(f'Invalid column reference: "{left}.{right}"')
+
+    # Unquoted identifiers (string literals stripped). Aliases already collected.
+    scrubbed = _strip_sql_literals(query)
+    # Remove AS <alias> so alias names aren't re-scanned as bare identifiers.
+    scrubbed_no_alias = _ALIAS_RE.sub(" ", scrubbed)
+
+    for m in _IDENT_RE.finditer(scrubbed_no_alias):
+        tok = m.group(1)
+        low = tok.lower()
+        if low in _SQL_KEYWORDS or low in aliases or low in valid or low in relations:
+            continue
+        if low.isdigit():
+            continue
+        end = m.end()
+        rest = scrubbed_no_alias[end : end + 8].lstrip()
+        if rest.startswith("("):
+            continue
+        if scrubbed_no_alias[end : end + 1] == ".":
+            continue
+        if low not in seen:
+            seen.add(low)
+            issues.append(f'Invalid column reference: "{tok}"')
+
+    return issues
 
 def split_top_level(text: str, sep: str = ',') -> List[str]:
     parts = []
@@ -170,28 +395,10 @@ def validate_sql(query: str, schema: Dict[str, Any] = None, question: str = "") 
             if is_desc:
                 critical_issues.append("Incorrect ORDER BY direction: Expected ASC for 'lowest'/'bottom' intent.")
 
-    # 5. Invalid column references
+    # 5. Invalid column references (quoted AND unquoted — catch hallucinations)
     if schema and ("columns" in schema or schema.get("multi_table")):
-        valid_columns = set()
-        if schema.get("multi_table") and schema.get("tables"):
-            for table in schema["tables"]:
-                for col in table.get("columns", []):
-                    valid_columns.add(col["name"].lower())
-                    # Also allow table-qualified forms in quotes
-                    valid_columns.add(f"{table['name']}.{col['name']}".lower())
-        else:
-            for col in schema.get("columns", []):
-                valid_columns.add(col["name"].lower())
-            # Allow the active table / dataset id when quoted (FROM "uploaded_data_…")
-            for key in ("dataset_id", "table_name", "duckdb_table"):
-                name = schema.get(key)
-                if isinstance(name, str) and name:
-                    valid_columns.add(name.lower())
-
-        quoted_cols = re.findall(r'"([^"]+)"', query)
-        for col in quoted_cols:
-            if col.lower() not in valid_columns:
-                critical_issues.append(f"Invalid column reference: \"{col}\"")
+        for issue in find_unknown_column_references(query, schema):
+            critical_issues.append(issue)
 
     # 6. Aggregate Alias (WARNING)
     select_clause_match = re.search(r"SELECT\s+(.*?)\s+FROM", query, re.IGNORECASE | re.DOTALL)

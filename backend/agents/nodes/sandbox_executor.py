@@ -58,7 +58,12 @@ def sandbox_executor_node(state: AgentState) -> Dict[str, Any]:
                     "execution_success": False,
                     "execution_time_ms": execution_time_ms,
                     "output_summary": {"error": error_msg, "code_context": code},
-                    "failure_summary": None
+                    "failure_summary": {
+                        "failure_type": "structural",
+                        "error_message": error_msg,
+                        "code_context": code,
+                        "expected_vs_actual": "SQL failed schema/quality validation before DuckDB execution.",
+                    },
                 }
             else:
                 if validation["warnings"]:

@@ -178,12 +178,9 @@ def use_analytics_demo_fallback() -> bool:
 def preferred_analytics_provider() -> str:
     """Startup/runtime label: sqlcoder | groq | gemini | deterministic."""
     try:
-        from backend.services.sql.sqlcoder_service import (
-            sqlcoder_enabled,
-            sqlcoder_prefer_over_api,
-        )
+        from backend.services.sql.sqlcoder_service import should_try_sqlcoder_first
 
-        if sqlcoder_enabled() and sqlcoder_prefer_over_api():
+        if should_try_sqlcoder_first():
             return "sqlcoder"
     except Exception:
         pass
