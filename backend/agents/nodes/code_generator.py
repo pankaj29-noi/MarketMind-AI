@@ -129,6 +129,7 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
         unsupported_analytics_message,
         ANALYSIS_SOURCE_FALLBACK,
         ANALYSIS_SOURCE_LLM,
+        ANALYSIS_SOURCE_SQLCODER,
     )
     from backend.services.requirement_coverage import (
         check_requirement_coverage,
@@ -265,7 +266,100 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
                     precheck_missing=miss_fb,
                 )
 
-    # DEMO MODE: try deterministic schema-aware SQL before calling the LLM.
+    def _semantic_precheck(code: str):
+        # Pre-check inspects generated SQL only — do not pass schema columns
+        # (that would falsely mark metrics as covered merely because they exist in the dataset).
+        return check_requirement_coverage(question, code, columns=None)
+
+    def _schema_validate(code: str) -> tuple[bool, str]:
+        """Validate generated SQL against the real DuckDB schema before execution."""
+        from backend.services.sql.sql_quality_validator import validate_sql
+
+        schema_for_val = dict(schema_profile or {})
+        if table_name and not schema_for_val.get("dataset_id"):
+            schema_for_val["dataset_id"] = table_name
+        validation = validate_sql(code, schema_for_val, question)
+        if not validation.get("is_valid"):
+            return False, validation.get("diagnostics") or "SQL failed schema validation."
+        return True, ""
+
+    def _accept_sqlcoder(code: str, *, model: str, provider: str = "sqlcoder"):
+        ok_cov, missing = _semantic_precheck(code)
+        schema_ok, schema_diag = _schema_validate(code)
+        if not schema_ok:
+            logger.warning("SQLCoder SQL failed schema validation: %s", schema_diag)
+            return None, list(missing) if missing else [schema_diag], schema_diag
+        if not ok_cov:
+            return None, list(missing), "semantic_incomplete"
+        return _finish(
+            code,
+            source=ANALYSIS_SOURCE_SQLCODER,
+            provider=provider,
+            model=model,
+            precheck_ok=True,
+            precheck_missing=[],
+        ), [], ""
+
+    # PRIMARY local NL→SQL: Defog SQLCoder (schema + requirements only; no CSV dump).
+    sqlcoder_attempted = False
+    sqlcoder_last_sql = ""
+    sqlcoder_last_error = ""
+    if approach == "sql":
+        from backend.services.sql.sqlcoder_service import (
+            generate_sql_with_sqlcoder,
+            sqlcoder_enabled,
+            sqlcoder_prefer_over_api,
+        )
+
+        if sqlcoder_enabled() and sqlcoder_prefer_over_api():
+            sqlcoder_attempted = True
+            sc = generate_sql_with_sqlcoder(
+                question,
+                schema_profile or {},
+                table_name=table_name or "",
+                requirement_contract=requirement_contract,
+            )
+            if sc.ok and sc.sql:
+                sqlcoder_last_sql = sc.sql
+                accepted, miss_sc, reason = _accept_sqlcoder(sc.sql, model=sc.model)
+                if accepted is not None:
+                    logger.info(
+                        "Generated SQL via local SQLCoder (%s); schema+semantic checks passed.",
+                        sc.model,
+                    )
+                    return accepted
+                # One local regenerate with explicit coverage feedback (still SQLCoder).
+                if reason == "semantic_incomplete" and miss_sc:
+                    feedback = generation_precheck_feedback(question, miss_sc, req)
+                    regen_contract = (
+                        f"{requirement_contract}\n\nPREVIOUS SQL REJECTED:\n{sc.sql}\n"
+                        f"FIX REQUIRED:\n{feedback}"
+                    )
+                    sc2 = generate_sql_with_sqlcoder(
+                        question,
+                        schema_profile or {},
+                        table_name=table_name or "",
+                        requirement_contract=regen_contract,
+                    )
+                    if sc2.ok and sc2.sql:
+                        sqlcoder_last_sql = sc2.sql
+                        accepted2, _, _ = _accept_sqlcoder(sc2.sql, model=sc2.model)
+                        if accepted2 is not None:
+                            logger.info("SQLCoder regenerate passed schema+semantic checks.")
+                            return accepted2
+                sqlcoder_last_error = reason or "validation_failed"
+                logger.warning(
+                    "SQLCoder SQL rejected (%s); falling through to API/deterministic if available.",
+                    sqlcoder_last_error,
+                )
+            else:
+                sqlcoder_last_error = sc.error or "empty_sql"
+                logger.warning(
+                    "SQLCoder unavailable or empty (%s); using API/deterministic fallback if needed.",
+                    sqlcoder_last_error,
+                )
+
+    # DEMO MODE: try deterministic schema-aware SQL when no generative path remains.
     if approach == "sql" and use_analytics_demo_fallback():
         fallback = resolve_analytics_fallback(question, schema_profile or {}, dataset_id)
         if fallback.sql:
@@ -292,8 +386,42 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
                 "error_message": unsupported_analytics_message(
                     fallback.reason, schema_profile or {}, dataset_id
                 ),
-                "code_context": "",
+                "code_context": sqlcoder_last_sql,
                 "expected_vs_actual": fallback.reason,
+            },
+        )
+
+    # API LLM fallback — only when SQLCoder did not produce validated SQL (or is off).
+    # Skip the round-trip when no provider key is configured.
+    from backend.config import has_valid_llm_api_key
+
+    if approach == "sql" and sqlcoder_attempted and not has_valid_llm_api_key():
+        fallback = resolve_analytics_fallback(question, schema_profile or {}, dataset_id)
+        if fallback.sql:
+            logger.warning(
+                "SQLCoder did not yield validated SQL and no API LLM key is set — "
+                "using deterministic fallback."
+            )
+            ok_fb, miss_fb = check_requirement_coverage(question, fallback.sql, columns=None)
+            return _finish(
+                fallback.sql,
+                source=ANALYSIS_SOURCE_FALLBACK,
+                precheck_ok=ok_fb,
+                precheck_missing=miss_fb,
+            )
+        return _finish(
+            "",
+            source=ANALYSIS_SOURCE_FALLBACK,
+            failed=True,
+            failure={
+                "failure_type": "unsupported_question",
+                "error_message": unsupported_analytics_message(
+                    fallback.reason, schema_profile or {}, dataset_id
+                ),
+                "code_context": sqlcoder_last_sql,
+                "expected_vs_actual": (
+                    f"sqlcoder:{sqlcoder_last_error or 'failed'}; fallback:{fallback.reason}"
+                ),
             },
         )
 
@@ -324,6 +452,17 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
         ),
     ]
 
+    if approach == "sql" and sqlcoder_attempted and sqlcoder_last_sql:
+        messages.append(
+            HumanMessage(
+                content=(
+                    "A local SQLCoder draft failed validation. Do not repeat its mistakes.\n"
+                    f"Draft SQL:\n{sqlcoder_last_sql}\n"
+                    f"Rejection: {sqlcoder_last_error or 'validation_failed'}"
+                )
+            )
+        )
+
     # Inject failure history if we are retrying code generation
     if retry_history:
         code_failures = [
@@ -352,11 +491,6 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
                     "Do NOT repeat the same incomplete query."
                 )
             ))
-
-    def _semantic_precheck(code: str):
-        # Pre-check inspects generated SQL only — do not pass schema columns
-        # (that would falsely mark metrics as covered merely because they exist in the dataset).
-        return check_requirement_coverage(question, code, columns=None)
 
     try:
         inv = invoke_llm(messages, temperature=0.0)

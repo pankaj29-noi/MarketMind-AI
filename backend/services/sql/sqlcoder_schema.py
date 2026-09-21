@@ -1,0 +1,148 @@
+"""
+Schema formatting for Defog SQLCoder.
+
+Passes DuckDB table/column structure only — never CSV row payloads.
+Optional tiny sample tokens (≤3 short values) may appear in DDL comments
+for type disambiguation; bulk data must never be included.
+"""
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional
+
+
+_DUCKDB_TYPE_MAP = {
+    "VARCHAR": "VARCHAR",
+    "TEXT": "VARCHAR",
+    "STRING": "VARCHAR",
+    "INTEGER": "INTEGER",
+    "BIGINT": "BIGINT",
+    "INT": "INTEGER",
+    "INT64": "BIGINT",
+    "DOUBLE": "DOUBLE",
+    "FLOAT": "DOUBLE",
+    "REAL": "DOUBLE",
+    "DECIMAL": "DECIMAL",
+    "NUMERIC": "DECIMAL",
+    "BOOLEAN": "BOOLEAN",
+    "BOOL": "BOOLEAN",
+    "DATE": "DATE",
+    "TIMESTAMP": "TIMESTAMP",
+    "DATETIME": "TIMESTAMP",
+    "TIME": "TIME",
+}
+
+
+def _map_dtype(dtype: Any) -> str:
+    raw = str(dtype or "VARCHAR").strip().upper()
+    # Strip precision suffixes like DECIMAL(10,2) → DECIMAL
+    base = raw.split("(")[0].strip()
+    return _DUCKDB_TYPE_MAP.get(base, raw if raw else "VARCHAR")
+
+
+def _quote_ident(name: str) -> str:
+    safe = (name or "").replace('"', '""')
+    return f'"{safe}"'
+
+
+def _sample_comment(samples: Optional[List[Any]], max_samples: int = 3) -> str:
+    """Tiny type-hint samples only — never dump datasets."""
+    if not samples:
+        return ""
+    bits: List[str] = []
+    for s in samples[:max_samples]:
+        text = str(s).strip()
+        if not text:
+            continue
+        if len(text) > 40:
+            text = text[:37] + "..."
+        bits.append(text.replace("\n", " "))
+    if not bits:
+        return ""
+    return f" -- e.g. {', '.join(bits)}"
+
+
+def _create_table_ddl(
+    table_name: str,
+    columns: List[Dict[str, Any]],
+    *,
+    include_samples: bool = True,
+) -> str:
+    lines = [f"CREATE TABLE {_quote_ident(table_name)} ("]
+    col_lines: List[str] = []
+    for col in columns:
+        name = col.get("name") or ""
+        if not name:
+            continue
+        dtype = _map_dtype(col.get("dtype"))
+        comment = _sample_comment(col.get("sample_values")) if include_samples else ""
+        col_lines.append(f"  {_quote_ident(name)} {dtype},{comment}")
+    if col_lines:
+        # Drop trailing comma on last column line (keep comment)
+        last = col_lines[-1]
+        if "," in last:
+            before, after = last.split(",", 1)
+            col_lines[-1] = before + after
+    lines.extend(col_lines)
+    lines.append(");")
+    return "\n".join(lines)
+
+
+def format_schema_ddl_for_sqlcoder(
+    schema_profile: Dict[str, Any],
+    fallback_table: str = "",
+    *,
+    include_samples: bool = True,
+) -> str:
+    """
+    Build SQLCoder `table_metadata_string`: CREATE TABLE DDL (+ relationship notes).
+
+    Never includes CSV contents or large value dumps.
+    """
+    parts: List[str] = [
+        "-- Dialect: DuckDB (PostgreSQL-compatible SELECT)",
+        "-- Generate a single read-only SELECT or WITH…SELECT.",
+        "",
+    ]
+
+    if schema_profile.get("multi_table") and schema_profile.get("tables"):
+        for table in schema_profile["tables"]:
+            tname = table.get("name") or ""
+            cols = table.get("columns") or []
+            if not tname or not cols:
+                continue
+            parts.append(_create_table_ddl(tname, cols, include_samples=include_samples))
+            parts.append("")
+
+        rels = schema_profile.get("relationship_notes") or [
+            r.get("description", "") for r in (schema_profile.get("relationships") or [])
+        ]
+        rels = [r for r in rels if r]
+        if rels:
+            parts.append("-- Relationships (use for JOINs):")
+            for rel in rels:
+                parts.append(f"-- {rel}")
+            parts.append("")
+        return "\n".join(parts).strip() + "\n"
+
+    table_name = (
+        schema_profile.get("dataset_id")
+        or schema_profile.get("table_name")
+        or schema_profile.get("duckdb_table")
+        or fallback_table
+        or "data"
+    )
+    columns = schema_profile.get("columns") or []
+    parts.append(_create_table_ddl(str(table_name), columns, include_samples=include_samples))
+    return "\n".join(parts).strip() + "\n"
+
+
+def format_requirements_for_sqlcoder(requirement_contract: str) -> str:
+    """Structured analytical requirements appended to the user question block."""
+    text = (requirement_contract or "").strip()
+    if not text:
+        return ""
+    return (
+        "\n\n### Structured Requirements (must satisfy)\n"
+        f"{text}\n"
+        "Output SQL only — no narrative."
+    )

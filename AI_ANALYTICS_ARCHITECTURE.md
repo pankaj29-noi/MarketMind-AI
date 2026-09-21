@@ -18,7 +18,7 @@ This document describes the **actual** implementation, not an aspirational redes
 | Lead Intelligence | Separate LangGraph (`backend/marketplace/lead/`) | `/marketplace/lead/analyze` |
 | Data plane | Per-session in-memory DuckDB (`session_manager.py`) | `register_csv` / `execute_query` |
 | Checkpointer | PostgresSaver if pool up, else MemorySaver | LangGraph thread = `session_id` |
-| LLM | Groq primary → Gemini fallback → deterministic SQL fallback | `backend/config.py` `get_llm` |
+| LLM | Local SQLCoder (primary) → Groq → Gemini → deterministic SQL | `sqlcoder_service` + `config.invoke_llm` |
 | Deploy | Render API + Vercel FE | `render.yaml`, `vercel.json` |
 
 ---

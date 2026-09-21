@@ -150,13 +150,25 @@ def use_lead_demo_extraction() -> bool:
     return True
 
 
+def sqlcoder_configured() -> bool:
+    """True when local SQLCoder is enabled for NL→SQL (model may load lazily)."""
+    try:
+        from backend.services.sql.sqlcoder_service import sqlcoder_enabled
+
+        return sqlcoder_enabled()
+    except Exception:
+        return False
+
+
 def use_analytics_demo_fallback() -> bool:
     """
-    Prefer deterministic analytics SQL only when no LLM provider is available.
+    Prefer deterministic analytics SQL only when no generative SQL path is available.
 
-    DEMO_MODE=auto must NOT force fallback when Groq or Gemini is configured.
+    DEMO_MODE=auto must NOT force fallback when Groq/Gemini or local SQLCoder is on.
     """
     if has_valid_llm_api_key():
+        return False
+    if sqlcoder_configured():
         return False
     if DEMO_MODE in ("0", "false", "no", "off"):
         return False
@@ -164,11 +176,23 @@ def use_analytics_demo_fallback() -> bool:
 
 
 def preferred_analytics_provider() -> str:
-    """Startup/runtime label: groq | gemini | deterministic."""
+    """Startup/runtime label: sqlcoder | groq | gemini | deterministic."""
+    try:
+        from backend.services.sql.sqlcoder_service import (
+            sqlcoder_enabled,
+            sqlcoder_prefer_over_api,
+        )
+
+        if sqlcoder_enabled() and sqlcoder_prefer_over_api():
+            return "sqlcoder"
+    except Exception:
+        pass
     if has_valid_groq_key():
         return "groq"
     if has_valid_gemini_key():
         return "gemini"
+    if sqlcoder_configured():
+        return "sqlcoder"
     return "deterministic"
 
 
@@ -176,13 +200,15 @@ def log_provider_startup_diagnostics() -> None:
     """Safe startup diagnostics — never prints secrets."""
     print(f"GROQ_AVAILABLE={'true' if has_valid_groq_key() else 'false'}")
     print(f"GEMINI_AVAILABLE={'true' if has_valid_gemini_key() else 'false'}")
+    print(f"SQLCODER_ENABLED={'true' if sqlcoder_configured() else 'false'}")
     print(f"DEMO_MODE={DEMO_MODE or 'auto'}")
     print(f"ANALYTICS_PROVIDER={preferred_analytics_provider()}")
     logger.info(
-        "LLM providers: groq=%s gemini=%s demo_mode=%s analytics_provider=%s "
+        "LLM providers: groq=%s gemini=%s sqlcoder=%s demo_mode=%s analytics_provider=%s "
         "groq_model=%s gemini_model=%s env=%s",
         has_valid_groq_key(),
         has_valid_gemini_key(),
+        sqlcoder_configured(),
         DEMO_MODE,
         preferred_analytics_provider(),
         GROQ_MODEL,

@@ -22,6 +22,8 @@ scratch/*
 !scratch/.gitkeep
 uploads/*
 !uploads/.gitkeep
+models/
+*.gguf
 
 # Frontend build & packages
 frontend/node_modules/

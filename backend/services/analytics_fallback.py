@@ -29,6 +29,7 @@ ANALYSIS_SOURCE_FALLBACK = "deterministic_fallback"
 ANALYSIS_SOURCE_LLM = "llm"  # legacy alias
 ANALYSIS_SOURCE_GROQ = "groq"
 ANALYSIS_SOURCE_GEMINI = "gemini"
+ANALYSIS_SOURCE_SQLCODER = "sqlcoder"
 
 
 @dataclass

@@ -157,22 +157,25 @@ async def health(response: Response):
     can actually answer a question. A live process with no compiled agent graph
     cannot, and returning 200 for that state hides a broken deploy.
     """
-    from backend.config import has_valid_gemini_key, has_valid_groq_key
+    from backend.config import has_valid_gemini_key, has_valid_groq_key, sqlcoder_configured
     from backend.services import llm_circuit
+    from backend.services.sql.sqlcoder_service import sqlcoder_status
 
     agent_ready = agent_graph is not None
+    sqlcoder = sqlcoder_status()
     providers = {
         "groq": has_valid_groq_key(),
         "gemini": has_valid_gemini_key(),
+        "sqlcoder": bool(sqlcoder_configured()),
     }
     cooling = llm_circuit.state()
 
-    # Analytics still works without a provider via deterministic SQL, so a cooling
-    # provider is reported as degraded rather than unhealthy.
+    # Analytics still works without a cloud provider via SQLCoder or deterministic SQL.
+    has_generative = any(providers.values())
     if not agent_ready:
         status = "unavailable"
         response.status_code = 503
-    elif cooling or not any(providers.values()):
+    elif cooling or not has_generative:
         status = "degraded"
     else:
         status = "ok"
@@ -182,6 +185,12 @@ async def health(response: Response):
         "service": "marketmind-api",
         "agent_ready": agent_ready,
         "providers": providers,
+        "sqlcoder": {
+            "enabled": sqlcoder.get("enabled"),
+            "loaded": sqlcoder.get("loaded"),
+            "backend": sqlcoder.get("backend"),
+            "platform": sqlcoder.get("platform"),
+        },
         "providers_cooling_down_seconds": cooling,
         "deterministic_fallback_available": True,
     }

@@ -18,3 +18,7 @@ langgraph-checkpoint-postgres>=1.0.0
 langchain-mcp-adapters>=0.3.0
 fastmcp>=3.4.4
 httpx>=0.27.0
+huggingface-hub>=0.20.0
+# Local Defog SQLCoder (GGUF via llama.cpp). On Apple Silicon prefer Metal:
+#   CMAKE_ARGS="-DGGML_METAL=on" pip install "llama-cpp-python>=0.2.90"
+llama-cpp-python>=0.2.90

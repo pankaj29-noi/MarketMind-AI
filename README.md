@@ -50,6 +50,7 @@ Statuses include: `complete`, `needs_info`, `no_products`, `no_suppliers`, `fail
 - In-memory fallbacks for sessions / observability
 - LangGraph MemorySaver when Postgres is unavailable
 - DEMO MODE for Lead extraction without API credentials
+- **Local Defog SQLCoder** (llama.cpp / Metal on Apple Silicon) as primary NL→SQL — see [docs/SQLCODER.md](./docs/SQLCODER.md)
 
 ---
 
