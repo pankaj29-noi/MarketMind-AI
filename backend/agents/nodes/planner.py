@@ -220,11 +220,24 @@ def planner_node(state: AgentState) -> Dict[str, Any]:
             },
         )
 
-    # FAST PATH: SIMPLE questions get a deterministic plan (0 planner LLM).
-    if complexity == "SIMPLE" and retry_count == 0 and not use_analytics_demo_fallback():
-        logger.info("Planner fast-path: deterministic plan for SIMPLE question.")
+    # FAST PATH: marketplace multi-table OR SIMPLE → deterministic plan (0 planner LLM).
+    schema_profile = state.get("schema_profile") or {}
+    _is_marketplace = bool(schema_profile.get("multi_table")) or (
+        str(state.get("dataset_id") or "") == "marketplace"
+    )
+    if _is_marketplace or (
+        retry_count == 0
+        and complexity == "SIMPLE"
+        and not use_analytics_demo_fallback()
+    ):
+        logger.info(
+            "Planner fast-path: deterministic plan for %s.",
+            "marketplace" if _is_marketplace else "SIMPLE",
+        )
         plan_data = _demo_sql_plan()
-        plan_data["planning_source"] = "simple_fast_path"
+        plan_data["planning_source"] = (
+            "marketplace_fast_path" if _is_marketplace else "simple_fast_path"
+        )
         plan_data, ok_pc, miss_pc, failure = _ensure_plan_semantically_complete(
             plan_data, allow_repair=True
         )

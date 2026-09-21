@@ -133,33 +133,45 @@ def resolve_marketplace_fallback(question: str) -> FallbackResult:
     wants_top = _wants_top(q)
 
     # ── Category × order value / GMV / AOV ───────────────────────────────────
+    # orders have no product_id — allocate each order's amount across the
+    # supplier's products (and thus categories) evenly.
     if "category" in ents and ("order" in ents or _has_any(q, {"gmv", "sales", "revenue", "value"})):
         if wants_avg:
             sql = f"""
+WITH order_category_share AS (
+  SELECT o.id AS order_id,
+         o.amount,
+         p.category_id,
+         1.0 / NULLIF(COUNT(*) OVER (PARTITION BY o.id), 0) AS share
+  FROM orders o
+  JOIN products p ON p.supplier_id = o.supplier_id
+)
 SELECT c.name AS category,
-       ROUND(AVG(o.amount / NULLIF(cnt.n, 0)), 2) AS average_order_value
-FROM orders o
-JOIN (
-    SELECT supplier_id, COUNT(*) AS n FROM products GROUP BY supplier_id
-) cnt ON cnt.supplier_id = o.supplier_id
-JOIN products p ON p.supplier_id = o.supplier_id
-JOIN categories c ON c.id = p.category_id
+       ROUND(AVG(ocs.amount * ocs.share), 2) AS average_order_value
+FROM order_category_share ocs
+JOIN categories c ON c.id = ocs.category_id
 GROUP BY c.name
 ORDER BY average_order_value DESC
 LIMIT {lim}
 """.strip()
         else:
+            # Allocate each order's amount across the supplier's product categories
+            # (orders have no product_id). Window share avoids double-counting.
             sql = f"""
+WITH order_category_share AS (
+  SELECT o.id AS order_id,
+         o.amount,
+         p.category_id,
+         1.0 / NULLIF(COUNT(*) OVER (PARTITION BY o.id), 0) AS share
+  FROM orders o
+  JOIN products p ON p.supplier_id = o.supplier_id
+)
 SELECT c.name AS category,
-       ROUND(SUM(o.amount / NULLIF(cnt.n, 0)), 2) AS total_order_value
-FROM orders o
-JOIN (
-    SELECT supplier_id, COUNT(*) AS n FROM products GROUP BY supplier_id
-) cnt ON cnt.supplier_id = o.supplier_id
-JOIN products p ON p.supplier_id = o.supplier_id
-JOIN categories c ON c.id = p.category_id
+       ROUND(SUM(ocs.amount * ocs.share), 2) AS total_sales
+FROM order_category_share ocs
+JOIN categories c ON c.id = ocs.category_id
 GROUP BY c.name
-ORDER BY total_order_value DESC
+ORDER BY total_sales DESC
 LIMIT {lim}
 """.strip()
         return FallbackResult(sql, "answerable")

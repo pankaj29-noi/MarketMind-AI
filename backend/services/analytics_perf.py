@@ -59,6 +59,14 @@ def get_or_build_csv_schema_profile(session_id: str, dataset_id: str) -> Dict[st
     """
     from backend.services.session_manager import session_manager
     from backend.services.adaptive_questions.profiler import profile_dataset
+    from backend.marketplace.demo_data import (
+        is_marketplace_dataset,
+        build_marketplace_schema_profile,
+    )
+
+    # Logical dataset_id "marketplace" is not a real DuckDB table.
+    if is_marketplace_dataset(dataset_id):
+        return build_marketplace_schema_profile(session_id)
 
     session = session_manager.get_session(session_id)
     cached = getattr(session, "schema_profile_cache", None) or {}

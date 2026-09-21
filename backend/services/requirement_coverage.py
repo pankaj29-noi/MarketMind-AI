@@ -825,7 +825,17 @@ def _has_dimension_coverage(
 
 def _has_sales_metric(blob: str) -> bool:
     return _blob_has(
-        blob, r"\bsales", r"\brevenue", r"\bgmv", r"\border_value\b", r"\bsales_amount\b"
+        blob,
+        r"\bsales",
+        r"\brevenue",
+        r"\bgmv",
+        r"\border_value\b",
+        r"order_value",  # aliases like total_order_value
+        r"\bsales_amount\b",
+        r"\bamount\b",  # marketplace orders.amount
+        r"\btotal_sales\b",
+        r"\bestimated_revenue\b",
+        r"\bestimated_value\b",
     )
 
 

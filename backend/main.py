@@ -602,12 +602,50 @@ async def suggested_questions_endpoint(
     if session_id not in sm.sessions:
         raise HTTPException(status_code=404, detail="Session not found or expired.")
 
+    from backend.marketplace.demo_data import (
+        MARKETPLACE_TABLES,
+        is_marketplace_dataset,
+    )
+    from backend.marketplace.sql_fallback import EXAMPLE_QUESTIONS
+
     duck = sm.sessions.get(session_id)
-    if duck and dataset_id not in (duck.registered_tables or []):
+    registered = set((duck.registered_tables if duck else None) or [])
+    is_mkt = is_marketplace_dataset(dataset_id) or set(MARKETPLACE_TABLES).issubset(
+        registered
+    )
+    if duck and not is_mkt and dataset_id not in registered:
         raise HTTPException(
             status_code=400,
             detail="dataset_id is not registered in this session.",
         )
+
+    if is_mkt:
+        count = max(1, min(int(request.count or 8), 10))
+        questions = []
+        for i, q in enumerate(EXAMPLE_QUESTIONS[:count]):
+            questions.append(
+                {
+                    "id": f"mkt-ex-{i}",
+                    "question": q,
+                    "tier": "quick",
+                    "difficulty": "simple",
+                    "verified": True,
+                }
+            )
+        return {
+            "dataset_id": "marketplace",
+            "fingerprint": "marketplace-demo",
+            "generation_version": "marketplace-examples-v1",
+            "questions": questions,
+            "tiers": [{"tier": "quick", "questions": questions}],
+            "question_pool": questions,
+            "message": (
+                f"{len(questions)} marketplace starter questions "
+                "(multi-table demo — verified join templates)."
+            ),
+            "cache_hit": False,
+            "complexity": "simple",
+        }
 
     count = max(1, min(int(request.count or 8), 10))
     try:
@@ -889,9 +927,28 @@ async def analyze_data(
         get_or_build_csv_schema_profile,
     )
     from backend.mcp.data_access import is_csv_session
+    from backend.marketplace.demo_data import (
+        is_marketplace_dataset,
+        build_marketplace_schema_profile,
+    )
 
     schema_fingerprint = None
-    if isinstance(existing_schema, dict) and existing_schema.get("fingerprint"):
+    # Multi-table marketplace has no DuckDB table named "marketplace" — never
+    # profile that id as a single CSV; always use the join-aware schema.
+    if is_marketplace_dataset(dataset_id, session_record.get("dataset_name")):
+        needs_mkt = not (
+            isinstance(existing_schema, dict)
+            and existing_schema.get("multi_table")
+            and existing_schema.get("tables")
+        )
+        if needs_mkt:
+            try:
+                existing_schema = build_marketplace_schema_profile(session_id)
+            except Exception as e:
+                logger.warning("Could not build marketplace schema profile: %s", e)
+        if isinstance(existing_schema, dict) and existing_schema.get("fingerprint"):
+            schema_fingerprint = existing_schema.get("fingerprint")
+    elif isinstance(existing_schema, dict) and existing_schema.get("fingerprint"):
         schema_fingerprint = existing_schema.get("fingerprint")
     elif is_csv_session(session_id):
         try:

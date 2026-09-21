@@ -132,6 +132,7 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
     dataset_id = state.get("dataset_id")
     table_name = state.get("duckdb_table") or dataset_id
     retry_history = state.get("retry_history", [])
+    session_id = state.get("session_id")
 
     approach = plan.get("approach", "sql")
     plan_steps = "\n".join([f"- {s}" for s in plan.get("steps", [])])
@@ -140,7 +141,11 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
     error_msg = None
     generated_code = ""
 
-    from backend.marketplace.demo_data import format_schema_context_for_llm
+    from backend.marketplace.demo_data import (
+        format_schema_context_for_llm,
+        is_marketplace_dataset,
+        build_marketplace_schema_profile,
+    )
     from backend.services.analytics_fallback import (
         resolve_analytics_fallback,
         unsupported_analytics_message,
@@ -148,6 +153,22 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
         ANALYSIS_SOURCE_LLM,
         ANALYSIS_SOURCE_SQLCODER,
     )
+
+    # Repair empty/single-table schema for marketplace sessions (no table named
+    # "marketplace" exists — joins need the multi-table profile).
+    if (
+        is_marketplace_dataset(dataset_id, (schema_profile or {}).get("dataset_name"))
+        and session_id
+        and not (
+            isinstance(schema_profile, dict)
+            and schema_profile.get("multi_table")
+            and schema_profile.get("tables")
+        )
+    ):
+        try:
+            schema_profile = build_marketplace_schema_profile(session_id)
+        except Exception as schema_err:
+            logger.warning("Could not repair marketplace schema profile: %s", schema_err)
     from backend.services.requirement_coverage import (
         check_requirement_coverage,
         extract_question_requirements,
@@ -290,8 +311,16 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
                     if not schema_ok_pat:
                         logger.warning("Pattern SQL failed schema validation: %s", schema_diag_pat)
 
-    # Outside DEMO MODE: still try deterministic marketplace/CSV templates for SIMPLE.
-    if approach == "sql" and complexity == "SIMPLE" and retry_count == 0 and not use_analytics_demo_fallback():
+    # Prefer deterministic templates before SQLCoder/LLM when:
+    # - marketplace multi-table (any complexity / retry — join paths are known), or
+    # - SIMPLE single-table questions outside DEMO MODE (first attempt only).
+    _is_marketplace = bool((schema_profile or {}).get("multi_table")) or is_marketplace_dataset(
+        dataset_id or "", (schema_profile or {}).get("dataset_name")
+    )
+    if approach == "sql" and (
+        _is_marketplace
+        or (retry_count == 0 and complexity == "SIMPLE" and not use_analytics_demo_fallback())
+    ):
         fallback = resolve_analytics_fallback(question, schema_profile or {}, dataset_id)
         if fallback.sql:
             ok_fb, miss_fb = check_requirement_coverage(question, fallback.sql, columns=None)
@@ -302,7 +331,10 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
                 schema_for_fb["dataset_id"] = table_name
             _vf = _vs2(fallback.sql, schema_for_fb, question)
             if ok_fb and _vf.get("is_valid"):
-                logger.info("Fast-path deterministic fallback SQL for SIMPLE question.")
+                logger.info(
+                    "Fast-path deterministic fallback SQL (%s).",
+                    "marketplace" if _is_marketplace else "SIMPLE",
+                )
                 return _finish(
                     fallback.sql,
                     source=ANALYSIS_SOURCE_FALLBACK,

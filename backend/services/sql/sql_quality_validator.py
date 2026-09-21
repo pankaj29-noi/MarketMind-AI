@@ -65,6 +65,12 @@ _FROM_ALIAS_RE = re.compile(
     r"(?:\s+(?:AS\s+)?(?:\"([^\"]+)\"|([A-Za-z_][\w$]*)))?",
     re.IGNORECASE,
 )
+# Subquery / derived-table aliases: ) AS cnt  or  ) cnt ON
+_SUBQUERY_ALIAS_RE = re.compile(
+    r"\)\s*(?:AS\s+)?(?:\"([^\"]+)\"|([A-Za-z_][\w$]*))"
+    r"(?=\s*(?:ON|WHERE|GROUP|ORDER|HAVING|JOIN|LEFT|RIGHT|INNER|FULL|CROSS|UNION|LIMIT|,|$|\)))",
+    re.IGNORECASE,
+)
 
 
 def _strip_sql_literals(sql: str) -> str:
@@ -133,6 +139,10 @@ def _collect_query_aliases(query: str) -> Set[str]:
         if table:
             aliases.add(table)
         # Do not treat SQL keywords (GROUP, WHERE, ORDER, …) as table aliases
+        if alias and alias not in _SQL_KEYWORDS:
+            aliases.add(alias)
+    for m in _SUBQUERY_ALIAS_RE.finditer(query):
+        alias = (m.group(1) or m.group(2) or "").lower()
         if alias and alias not in _SQL_KEYWORDS:
             aliases.add(alias)
     return aliases

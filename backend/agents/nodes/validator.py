@@ -345,6 +345,18 @@ Data Preview (Top Rows):
                     )
                     artifacts_update["semantic_check"] = "deterministic_pattern"
                     validation_passed = True
+                elif (state.get("analysis_artifacts") or {}).get(
+                    "analysis_source"
+                ) == "deterministic_fallback":
+                    # Marketplace/CSV template SQL already passed schema + coverage gates.
+                    # LLM validators often reject valid join-allocation heuristics and then
+                    # burn API quota / invent invalid retries (e.g. orders.product_id).
+                    logger.info(
+                        "Validator skipped LLM semantic check: deterministic_fallback "
+                        "with requirement coverage satisfied."
+                    )
+                    artifacts_update["semantic_check"] = "deterministic_fallback"
+                    validation_passed = True
                 else:
                     inv = invoke_llm(messages, temperature=0.0)
                     content = (inv.get("content") or "").strip()

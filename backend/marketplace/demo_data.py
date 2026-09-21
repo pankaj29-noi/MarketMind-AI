@@ -308,6 +308,19 @@ def build_marketplace_schema_profile(session_id: str) -> Dict[str, Any]:
     """
     Build a multi-table schema profile including relationships and sample values.
     """
+    try:
+        session = session_manager.get_session(session_id)
+        cached = getattr(session, "schema_profile_cache", None) or {}
+        entry = cached.get(MARKETPLACE_DATASET_ID)
+        if (
+            isinstance(entry, dict)
+            and entry.get("multi_table")
+            and entry.get("tables")
+        ):
+            return entry
+    except Exception:
+        session = None
+
     tables_payload: List[Dict[str, Any]] = []
     total_rows = 0
 
@@ -350,8 +363,9 @@ def build_marketplace_schema_profile(session_id: str) -> Dict[str, Any]:
     # Primary table for single-table backward-compat fields: products
     primary = next((t for t in tables_payload if t["name"] == "products"), tables_payload[0])
 
-    return {
+    profile = {
         "dataset_id": MARKETPLACE_DATASET_ID,
+        "dataset_name": MARKETPLACE_DATASET_NAME,
         "source": "csv",
         "multi_table": True,
         "tables": tables_payload,
@@ -361,7 +375,13 @@ def build_marketplace_schema_profile(session_id: str) -> Dict[str, Any]:
         "relationship_notes": [
             r["description"] for r in MARKETPLACE_RELATIONSHIPS
         ],
+        "fingerprint": f"marketplace-{total_rows}",
     }
+    if session is not None:
+        if not hasattr(session, "schema_profile_cache") or session.schema_profile_cache is None:
+            session.schema_profile_cache = {}
+        session.schema_profile_cache[MARKETPLACE_DATASET_ID] = profile
+    return profile
 
 
 def _safe_sample_preview(samples, max_samples: int = 3) -> str:
