@@ -271,17 +271,32 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
             outcome["analysis_artifacts"]["ambiguity"] = ambiguity.to_dict()
             return outcome
 
-    # FAST PATH: schema-adaptive pattern SQL for SIMPLE questions (0 LLM).
-    # Also allow high-precision percent-of-total templates on COMPLEX questions —
-    # those patterns are exact and prevent ranking-instead-of-proportion regressions.
+    # FAST PATH: schema-adaptive pattern SQL (0 LLM) whenever the template is exact.
+    # Includes SIMPLE plus high-precision patterns (percent-of-total, aggregates,
+    # rankings, trends) so suggested medium/hard questions still resolve offline.
     if approach == "sql" and retry_count == 0:
         cols = (schema_profile or {}).get("columns") or []
         if isinstance(cols, list) and cols:
             hit = try_simple_deterministic_sql(question, table_name, cols)
             if hit and hit.sql:
+                pid = (hit.pattern_id or "").upper()
                 allow_pattern = (
                     complexity == "SIMPLE"
-                    or (hit.pattern_id or "").startswith("PERCENT_OF_TOTAL")
+                    or pid.startswith("PERCENT_OF_TOTAL")
+                    or pid
+                    in {
+                        "COUNT",
+                        "SUM",
+                        "AVG",
+                        "MIN",
+                        "MAX",
+                        "TOP_N",
+                        "BOTTOM_N",
+                        "GROUP_BY",
+                        "DISTINCT",
+                        "MONTHLY_TREND",
+                        "YEARLY_TREND",
+                    }
                 )
                 if allow_pattern:
                     ok_pat, miss_pat = check_requirement_coverage(question, hit.sql, columns=None)
@@ -313,13 +328,14 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
 
     # Prefer deterministic templates before SQLCoder/LLM when:
     # - marketplace multi-table (any complexity / retry — join paths are known), or
-    # - SIMPLE single-table questions outside DEMO MODE (first attempt only).
+    # - single-table CSV whenever fallback/pattern SQL already answers the question
+    #   (easy/medium/hard — do not force SQLCoder when a safe template exists).
     _is_marketplace = bool((schema_profile or {}).get("multi_table")) or is_marketplace_dataset(
         dataset_id or "", (schema_profile or {}).get("dataset_name")
     )
     if approach == "sql" and (
         _is_marketplace
-        or (retry_count == 0 and complexity == "SIMPLE" and not use_analytics_demo_fallback())
+        or (retry_count == 0 and not use_analytics_demo_fallback())
     ):
         fallback = resolve_analytics_fallback(question, schema_profile or {}, dataset_id)
         if fallback.sql:
@@ -333,7 +349,7 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
             if ok_fb and _vf.get("is_valid"):
                 logger.info(
                     "Fast-path deterministic fallback SQL (%s).",
-                    "marketplace" if _is_marketplace else "SIMPLE",
+                    "marketplace" if _is_marketplace else complexity,
                 )
                 return _finish(
                     fallback.sql,

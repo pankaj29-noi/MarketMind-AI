@@ -149,7 +149,8 @@ def test_q4_dual_rank_intersection_pass_single_rank_fail():
     assert ok2 is True, miss2
 
 
-def test_code_generator_rejects_global_correlation_after_precheck():
+def test_code_generator_prefers_category_discount_fallback_over_bad_llm():
+    """Deterministic fallback must beat a bad LLM correlation for Q2."""
     bad_sql = "SELECT corr(discount_rate, profit) AS correlation FROM t"
     state = _base_state(Q2)
 
@@ -167,9 +168,11 @@ def test_code_generator_rejects_global_correlation_after_precheck():
     ):
         result = code_generator_node(state)
 
-    assert result["generated_code"] == ""
-    assert result["failure_summary"]["failure_type"] == "semantic_incomplete"
-    assert result["analysis_artifacts"].get("generation_precheck_ok") is False
+    code = result.get("generated_code") or ""
+    assert result.get("failure_summary") is None
+    assert "GROUP BY" in code.upper()
+    assert "category" in code.lower()
+    assert "corr(" not in code.lower()
     assert "SEMANTIC REQUIREMENTS" in result["analysis_artifacts"].get(
         "requirement_contract", ""
     )

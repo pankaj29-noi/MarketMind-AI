@@ -1,6 +1,7 @@
-"""Deterministic simple question templates bound to real columns + proof SQL.
+"""Deterministic question templates bound to real columns + proof SQL.
 
-Only easy, practical questions — no advanced / multi-step / expert intents.
+Easy / medium / hard shapes only when the production NL→SQL path
+(pattern library + analytics fallback) can answer them on click.
 """
 from __future__ import annotations
 
@@ -45,15 +46,14 @@ def generate_candidates(
     semantics: List[SemanticColumn],
 ) -> List[QuestionCandidate]:
     """
-    Build ONLY simple schema-grounded candidates.
+    Build schema-grounded candidates the analytics pipeline can answer.
 
     Preferred shapes:
-      - total / average of a numeric column
-      - record count
-      - highest / lowest category by metric
-      - metric by category
-      - top 5 items by metric
-      - counts per category
+      - total / average of a numeric column (easy)
+      - record count / distinct counts (easy)
+      - highest / lowest / top-N / group-by (easy–medium)
+      - monthly / yearly trend when a date column exists (medium)
+      - percent of total from top-N (hard — pattern library)
     """
     table = _ident(profile.table)
     out: List[QuestionCandidate] = []
@@ -68,7 +68,6 @@ def generate_candidates(
         seen_text.add(key)
         out.append(c)
 
-    # How many records?
     _add(
         QuestionCandidate(
             id=_qid("overview", "rows", profile.table),
@@ -84,8 +83,8 @@ def generate_candidates(
 
     measures = list(capabilities.measures[:4])
     dimensions = list(capabilities.dimensions[:4])
+    time_dims = list(getattr(capabilities, "time_dimensions", None) or [])[:2]
 
-    # Total / average of each numeric measure
     for measure in measures:
         mconf = conf_map.get(measure, 0.75)
         mlabel = _human(measure)
@@ -114,11 +113,9 @@ def generate_candidates(
             )
         )
 
-    # Category × metric: highest, lowest, by-category, top 5, counts
     for measure in measures[:3]:
         mlabel = _human(measure)
         mconf = conf_map.get(measure, 0.75)
-        # Rates/ratios should AVG; additive measures should SUM.
         m_sem = sem_by.get(measure)
         m_low = measure.lower()
         use_avg = bool(
@@ -171,7 +168,7 @@ def generate_candidates(
                     id=_qid("group", dim, measure),
                     text=f"Show {mlabel} by {dlabel}.",
                     category="grouping",
-                    difficulty="easy",
+                    difficulty="medium",
                     intent="group_by_measure",
                     proof_sql=(
                         f"SELECT {_ident(dim)} AS {_ident(dim)}, "
@@ -189,7 +186,7 @@ def generate_candidates(
                     id=_qid("top5", dim, measure),
                     text=f"What are the top 5 {_human(dim)} values by {mlabel}?",
                     category="ranking",
-                    difficulty="easy",
+                    difficulty="medium",
                     intent="top_n_by_measure",
                     proof_sql=(
                         f"SELECT {_ident(dim)} AS {_ident(dim)}, "
@@ -202,8 +199,34 @@ def generate_candidates(
                     columns_used=[dim, measure],
                 )
             )
+            if not use_avg:
+                _add(
+                    QuestionCandidate(
+                        id=_qid("pct_top", dim, measure),
+                        text=(
+                            f"What percentage of total {mlabel} comes from the "
+                            f"top 5 {dlabel} values?"
+                        ),
+                        category="concentration",
+                        difficulty="hard",
+                        intent="concentration_top_n",
+                        proof_sql=(
+                            f"WITH g AS ("
+                            f"SELECT {_ident(dim)} AS dim_val, "
+                            f"SUM({_ident(measure)}) AS total_m "
+                            f"FROM {table} WHERE {_ident(dim)} IS NOT NULL "
+                            f"GROUP BY 1), "
+                            f"t AS (SELECT SUM(total_m) AS top_total FROM "
+                            f"(SELECT total_m FROM g ORDER BY total_m DESC LIMIT 5)), "
+                            f"a AS (SELECT SUM(total_m) AS grand FROM g) "
+                            f"SELECT ROUND(100.0 * t.top_total / NULLIF(a.grand, 0), 2) "
+                            f"AS pct_of_total FROM t CROSS JOIN a"
+                        ),
+                        confidence=dconf * 0.92,
+                        columns_used=[dim, measure],
+                    )
+                )
 
-    # How many records per category
     for dim in dimensions[:3]:
         dlabel = _human(dim)
         _add(
@@ -211,7 +234,7 @@ def generate_candidates(
                 id=_qid("count", "per", dim),
                 text=f"How many records belong to each {dlabel}?",
                 category="overview",
-                difficulty="easy",
+                difficulty="medium",
                 intent="count_by_dimension",
                 proof_sql=(
                     f"SELECT {_ident(dim)} AS {_ident(dim)}, COUNT(*) AS record_count "
@@ -222,8 +245,22 @@ def generate_candidates(
                 columns_used=[dim],
             )
         )
+        _add(
+            QuestionCandidate(
+                id=_qid("distinct", "list", dim),
+                text=f"List distinct {dlabel}.",
+                category="overview",
+                difficulty="medium",
+                intent="distinct_dimension",
+                proof_sql=(
+                    f"SELECT DISTINCT {_ident(dim)} AS value FROM {table} "
+                    f"WHERE {_ident(dim)} IS NOT NULL ORDER BY 1 LIMIT 50"
+                ),
+                confidence=conf_map.get(dim, 0.8),
+                columns_used=[dim],
+            )
+        )
 
-    # Unique entity count (still simple)
     for ent in capabilities.entities[:2]:
         if ent in dimensions:
             continue
@@ -242,7 +279,46 @@ def generate_candidates(
             )
         )
 
-    # Drop low-confidence ambiguous monetary columns
+    for time_col in time_dims[:1]:
+        tlabel = _human(time_col)
+        for measure in measures[:2]:
+            mlabel = _human(measure)
+            mconf = min(conf_map.get(measure, 0.75), conf_map.get(time_col, 0.8))
+            _add(
+                QuestionCandidate(
+                    id=_qid("trend", "month", time_col, measure),
+                    text=f"Show monthly total {mlabel} using {tlabel}.",
+                    category="trend",
+                    difficulty="medium",
+                    intent="monthly_trend",
+                    proof_sql=(
+                        f"SELECT strftime(CAST({_ident(time_col)} AS DATE), '%Y-%m') AS month, "
+                        f"SUM({_ident(measure)}) AS total_{measure} "
+                        f"FROM {table} WHERE {_ident(time_col)} IS NOT NULL "
+                        f"GROUP BY 1 ORDER BY 1 LIMIT 36"
+                    ),
+                    confidence=mconf,
+                    columns_used=[time_col, measure],
+                )
+            )
+            _add(
+                QuestionCandidate(
+                    id=_qid("trend", "year", time_col, measure),
+                    text=f"Show yearly total {mlabel} using {tlabel}.",
+                    category="trend",
+                    difficulty="medium",
+                    intent="yearly_trend",
+                    proof_sql=(
+                        f"SELECT strftime(CAST({_ident(time_col)} AS DATE), '%Y') AS year, "
+                        f"SUM({_ident(measure)}) AS total_{measure} "
+                        f"FROM {table} WHERE {_ident(time_col)} IS NOT NULL "
+                        f"GROUP BY 1 ORDER BY 1 LIMIT 20"
+                    ),
+                    confidence=mconf,
+                    columns_used=[time_col, measure],
+                )
+            )
+
     filtered: List[QuestionCandidate] = []
     for c in out:
         skip = False

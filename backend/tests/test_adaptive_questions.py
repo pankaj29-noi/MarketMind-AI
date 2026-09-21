@@ -130,19 +130,22 @@ def _rich_session():
     )
 
 
-def test_simple_only_no_advanced_or_expert_tiers():
+def test_answerable_mix_includes_verified_tiers_only():
     session_id, dataset_id = _rich_session()
     invalidate_session(session_id)
     result = generate_suggested_questions(session_id, dataset_id, count=10)
     assert result["questions"]
     assert 5 <= len(result["questions"]) <= 10
+    assert result.get("generation_version", "").startswith("v4")
     tiers = {t["tier"] for t in result["tiers"]}
-    assert tiers <= {"quick"}
-    assert "advanced" not in tiers
+    assert tiers <= {"quick", "analytics", "advanced"}
     assert "expert" not in tiers
+    difficulties = {q["difficulty"] for q in result["questions"]}
+    assert difficulties <= {"easy", "medium", "hard", "very_hard"}
+    assert any(q["difficulty"] in {"medium", "hard"} for q in result["questions"]) or any(
+        q["tier"] in {"analytics", "advanced"} for q in result["questions"]
+    )
     for q in result["questions"]:
-        assert q["tier"] == "quick"
-        assert q["difficulty"] == "easy"
         assert q["validation_status"] == "executed"
 
 
@@ -166,30 +169,47 @@ def test_simple_dataset_shows_only_valid_questions():
     invalidate_session(session_id)
     result = generate_suggested_questions(session_id, dataset_id, count=10)
     tiers = {t["tier"] for t in result["tiers"]}
-    assert tiers <= {"quick"}
+    assert tiers <= {"quick", "analytics", "advanced"}
+    assert "expert" not in tiers
     assert result["questions"], result.get("message")
     assert len(result["questions"]) <= 10
+    for q in result["questions"]:
+        assert q["validation_status"] == "executed"
+        low = q["text"].lower()
+        assert "revenue" not in low and "profit" not in low
 
 
 def test_each_displayed_question_executes_on_duckdb():
-    """Every returned suggestion has already been DuckDB-verified; re-check proof."""
+    """Every returned suggestion must execute via its validated production SQL."""
     session_id, dataset_id = _rich_session()
     invalidate_session(session_id)
     result = generate_suggested_questions(session_id, dataset_id, count=8)
     assert result["questions"]
     from backend.services.adaptive_questions.profiler import profile_dataset
-    from backend.services.adaptive_questions.templates import generate_candidates
-    from backend.services.adaptive_questions.capabilities import build_capabilities
-    from backend.services.adaptive_questions.semantics import build_semantics
+    from backend.services.adaptive_questions.validator import (
+        _resolve_production_sql,
+        validate_candidate,
+    )
+    from backend.services.adaptive_questions.templates import QuestionCandidate
 
     profile = profile_dataset(session_id, dataset_id)
-    caps = build_capabilities(profile, build_semantics(profile))
-    by_id = {c.id: c for c in generate_candidates(profile, caps, build_semantics(profile))}
     for q in result["questions"]:
-        cand = by_id.get(q["id"])
-        assert cand is not None, q
-        res = run_query(session_id, dataset_id, cand.proof_sql)
-        assert res.get("success"), res.get("error")
+        sql = _resolve_production_sql(profile, q["text"])
+        assert sql, q["text"]
+        res = run_query(session_id, dataset_id, sql)
+        assert res.get("success"), (q["text"], res.get("error"))
+        cand = QuestionCandidate(
+            id=q["id"],
+            text=q["text"],
+            category=q.get("category") or "aggregation",
+            difficulty=q.get("difficulty") or "easy",
+            intent=q.get("intent") or "sum_measure",
+            proof_sql=sql,
+            confidence=1.0,
+            columns_used=list(q.get("required_columns") or []),
+        )
+        ok, reason = validate_candidate(session_id, profile, cand)
+        assert ok, (q["text"], reason)
 
 
 def test_cache_hit_is_fast_and_dataset_scoped():
@@ -290,7 +310,9 @@ def test_iot_schema_adapts_without_assuming_sales_columns():
         assert banned not in texts
     assert len(result["questions"]) <= 10
     for q in result["questions"]:
-        assert q["tier"] == "quick"
+        assert q["tier"] in {"quick", "analytics", "advanced"}
+        assert q["difficulty"] in {"easy", "medium", "hard", "very_hard"}
+        assert q["validation_status"] == "executed"
 
 
 def test_survey_schema_count_and_category_questions():

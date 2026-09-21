@@ -25,7 +25,8 @@ from backend.services.adaptive_questions.validator import validate_candidates
 logger = logging.getLogger(__name__)
 
 # Bump when generation logic changes so old caches are invalidated.
-GENERATION_VERSION = "v3-simple-only"
+GENERATION_VERSION = "v4-answerable-mix"
+
 
 _TIER_ORDER = [TIER_QUICK, TIER_ANALYTICS, TIER_ADVANCED, TIER_EXPERT]
 
@@ -40,12 +41,40 @@ _OPERATION_HINTS = {
     "row_count": ["count"],
     "distinct_entity": ["count", "distinct"],
     "distinct_dimension": ["distinct"],
+    "monthly_trend": ["trend", "time"],
+    "yearly_trend": ["trend", "time"],
+    "concentration_top_n": ["aggregation", "percent", "ranking"],
 }
 
 
 def _tier_targets(complexity: Dict[str, Any], count: int) -> Dict[str, int]:
-    """Simple-only suggestions: all seats in the quick tier (5–10)."""
+    """
+    Mix easy / medium / hard when the dataset supports it.
+
+    Only seats that validate via production NL→SQL are filled later.
+    """
     n = max(1, min(int(count or 8), 10))
+    band = str(complexity.get("band") or "basic")
+    advanced_possible = bool(complexity.get("advanced_possible"))
+    if band in {"rich", "moderate"} and advanced_possible and n >= 6:
+        quick = max(3, n // 2)
+        hard = 1 if n >= 7 else 0
+        medium = max(0, n - quick - hard)
+        return {
+            TIER_QUICK: quick,
+            TIER_ANALYTICS: medium,
+            TIER_ADVANCED: hard,
+            TIER_EXPERT: 0,
+        }
+    if band != "minimal" and n >= 5:
+        quick = max(3, (n * 2) // 3)
+        medium = n - quick
+        return {
+            TIER_QUICK: quick,
+            TIER_ANALYTICS: medium,
+            TIER_ADVANCED: 0,
+            TIER_EXPERT: 0,
+        }
     return {TIER_QUICK: n, TIER_ANALYTICS: 0, TIER_ADVANCED: 0, TIER_EXPERT: 0}
 
 
@@ -65,7 +94,8 @@ def _to_api(c, tier: str) -> Dict[str, Any]:
             "Uses " + ", ".join(col.replace("_", " ") for col in c.columns_used)
             if c.columns_used
             else "Dataset-level overview"
-        ),
+        )
+        + " · verified executable SQL before display",
     }
 
 
@@ -195,10 +225,8 @@ def generate_suggested_questions(
         return payload
 
     candidates = generate_candidates(profile, capabilities, semantics)
-    # v3-simple-only: never attach advanced/expert multi-step candidates.
-
     # Cap candidate volume before expensive validation (pipeline SQL + DuckDB).
-    candidates = candidates[:24]
+    candidates = candidates[:36]
 
     valid, rejected = validate_candidates(session_id, profile, candidates)
 
@@ -207,9 +235,9 @@ def generate_suggested_questions(
     targets = _tier_targets(complexity, count)
     questions = _select_tiered(valid, targets, exclude_ids)
 
-    # Backfill only within the quick tier — never invent advanced questions.
-    allowed_tiers = {t for t, n in targets.items() if n > 0}
-    target_total = min(count, sum(targets.values()), len(valid))
+    # Backfill from any validated tier so we still return useful starters.
+    allowed_tiers = {t for t, n in targets.items() if n > 0} or {TIER_QUICK}
+    target_total = min(count, sum(targets.values()) or count, len(valid))
     if len(questions) < target_total:
         chosen = {q["id"] for q in questions} | set(exclude_ids)
         remaining = [
@@ -221,13 +249,27 @@ def generate_suggested_questions(
         for c in select_diverse(remaining, target_total):
             if len(questions) >= target_total:
                 break
-            questions.append(_to_api(c, TIER_QUICK))
+            questions.append(
+                _to_api(c, DIFFICULTY_TO_TIER.get(c.difficulty, TIER_QUICK))
+            )
             chosen.add(c.id)
+    if len(questions) < min(count, len(valid)):
+        chosen = {q["id"] for q in questions} | set(exclude_ids)
+        for c in select_diverse(
+            [x for x in valid if x.id not in chosen], count
+        ):
+            if len(questions) >= min(count, len(valid)):
+                break
+            questions.append(
+                _to_api(c, DIFFICULTY_TO_TIER.get(c.difficulty, TIER_QUICK))
+            )
 
     # Never pad with invented questions — show only what validated.
     questions = questions[:count]
 
-    pool = [_to_api(c, TIER_QUICK) for c in valid]
+    pool = [
+        _to_api(c, DIFFICULTY_TO_TIER.get(c.difficulty, TIER_QUICK)) for c in valid
+    ]
     if cached_pool:
         known = {p["id"] for p in pool}
         pool += [p for p in cached_pool if p.get("id") not in known]
@@ -243,7 +285,8 @@ def generate_suggested_questions(
         message = message or "This dataset has limited analytical fields."
     else:
         message = message or (
-            f"{len(questions)} simple starter questions verified against this CSV."
+            f"{len(questions)} starter questions verified against this CSV "
+            "(easy/medium/hard — only questions the analytics path can answer)."
         )
 
     payload = {
