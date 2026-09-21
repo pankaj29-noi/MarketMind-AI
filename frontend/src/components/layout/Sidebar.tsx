@@ -44,7 +44,7 @@ const dtypeInfo = (dtype: string): { icon: React.ElementType; className: string;
   if (/CHAR|TEXT|VARCHAR|STRING/i.test(t)) return { icon: Type,           className: 'text-emerald-400', shortLabel: 'STR'     };
   if (/DATE|TIME|TIMESTAMP/i.test(t))      return { icon: Calendar,       className: 'text-amber-400',   shortLabel: 'DATE'    };
   if (/FLOAT|DOUBLE|DECIMAL|NUMERIC/i.test(t)) return { icon: Sigma,      className: 'text-pink-400',    shortLabel: 'NUM'     };
-  return                                          { icon: HelpCircle,      className: 'text-zinc-500',    shortLabel: dtype.slice(0, 4) };
+  return                                          { icon: HelpCircle,      className: 'text-muted-foreground', shortLabel: dtype.slice(0, 4) };
 };
 
 export function Sidebar({
@@ -119,7 +119,7 @@ export function Sidebar({
             <Plus className="h-4 w-4" />
             New analysis
           </span>
-          <kbd className="rounded-md bg-black/20 px-1.5 py-0.5 text-[10px] font-medium tracking-wider">⌘K</kbd>
+          <kbd className="rounded-md bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium tracking-wider">⌘K</kbd>
         </button>
       </div>
 

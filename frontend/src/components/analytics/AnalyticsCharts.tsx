@@ -50,7 +50,16 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({ metrics, compu
               <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="date" stroke="var(--color-muted-foreground)" fontSize={11} tickLine={false} axisLine={false} />
               <YAxis stroke="var(--color-muted-foreground)" fontSize={11} tickLine={false} axisLine={false} />
-              <Tooltip contentStyle={{ background: "var(--color-popover)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12 }} />
+              <Tooltip
+                contentStyle={{
+                  background: "var(--color-popover)",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: 8,
+                  fontSize: 12,
+                  color: "var(--color-popover-foreground)",
+                }}
+                labelStyle={{ color: "var(--color-muted-foreground)" }}
+              />
               <Area type="monotone" dataKey="queries" stroke="var(--color-primary)" strokeWidth={2} fill="url(#qv)" />
             </AreaChart>
           </ResponsiveContainer>
@@ -66,7 +75,14 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({ metrics, compu
               <XAxis dataKey="name" stroke="var(--color-muted-foreground)" fontSize={11} tickLine={false} axisLine={false} />
               <YAxis stroke="var(--color-muted-foreground)" fontSize={11} tickLine={false} axisLine={false} />
               <Tooltip 
-                contentStyle={{ background: "var(--color-popover)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12 }} 
+                contentStyle={{
+                  background: "var(--color-popover)",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: 8,
+                  fontSize: 12,
+                  color: "var(--color-popover-foreground)",
+                }}
+                labelStyle={{ color: "var(--color-muted-foreground)" }}
                 cursor={{ fill: "var(--color-secondary)", opacity: 0.4 }} 
               />
               <Bar dataKey="count" fill="var(--color-destructive)" radius={[6, 6, 0, 0]} />
@@ -83,7 +99,16 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({ metrics, compu
               <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="date" stroke="var(--color-muted-foreground)" fontSize={11} tickLine={false} axisLine={false} />
               <YAxis stroke="var(--color-muted-foreground)" fontSize={11} tickLine={false} axisLine={false} />
-              <Tooltip contentStyle={{ background: "var(--color-popover)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12 }} />
+              <Tooltip
+                contentStyle={{
+                  background: "var(--color-popover)",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: 8,
+                  fontSize: 12,
+                  color: "var(--color-popover-foreground)",
+                }}
+                labelStyle={{ color: "var(--color-muted-foreground)" }}
+              />
               <Line type="monotone" dataKey="success" stroke="var(--color-success)" strokeWidth={2} dot={{ r: 3, fill: "var(--color-success)" }} name="Successful" />
               <Line type="monotone" dataKey="failed" stroke="var(--color-destructive)" strokeWidth={2} dot={{ r: 3, fill: "var(--color-destructive)" }} name="Failed" />
             </LineChart>

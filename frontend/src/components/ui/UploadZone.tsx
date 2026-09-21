@@ -62,7 +62,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
       <div
         className={cn(
           "glass-card relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed p-12 transition-all duration-300",
-          isDragOver ? "border-primary bg-primary/5 scale-[1.02]" : "border-border hover:border-primary/50 hover:bg-white/5",
+          isDragOver ? "border-primary bg-primary/5 scale-[1.02]" : "border-border hover:border-primary/50 hover:bg-foreground/[0.03]",
           (disabled || loading) && "opacity-50 cursor-not-allowed",
           !disabled && !loading && "cursor-pointer"
         )}

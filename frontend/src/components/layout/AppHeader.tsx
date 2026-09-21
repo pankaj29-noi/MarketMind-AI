@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import { SystemStatus, type SystemStatusKind } from "./SystemStatus";
+import { ThemeToggle } from "./ThemeToggle";
 
 const MODULE_LABELS: Record<string, string> = {
   "/": "WORKSPACE",
@@ -15,6 +16,8 @@ interface AppHeaderProps {
   rowCount?: number;
   hasDataset?: boolean;
   model?: string;
+  isDark: boolean;
+  onThemeToggle: () => void;
   className?: string;
 }
 
@@ -25,6 +28,8 @@ export function AppHeader({
   rowCount,
   hasDataset,
   model,
+  isDark,
+  onThemeToggle,
   className,
 }: AppHeaderProps) {
   const moduleLabel = MODULE_LABELS[activePath] ?? "WORKSPACE";
@@ -62,12 +67,13 @@ export function AppHeader({
         )}
       </div>
 
-      <div className="flex shrink-0 items-center gap-3">
+      <div className="flex shrink-0 items-center gap-2.5 sm:gap-3">
         {model && (
           <span className="hidden type-mono text-[10px] text-muted-foreground md:inline">
             {model}
           </span>
         )}
+        <ThemeToggle isDark={isDark} onToggle={onThemeToggle} />
         <SystemStatus kind={statusKind} compact />
       </div>
     </header>

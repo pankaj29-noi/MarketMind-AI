@@ -1,23 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 import Plotly from 'plotly.js-dist-min';
+import { getChartThemeColors } from '@/lib/theme';
 
 export interface PlotlyChartProps {
   chartData: any;
   chartId?: string;
-}
-
-function readThemeColors(isDark: boolean) {
-  return isDark
-    ? {
-        font: '#f4f4f5',
-        grid: 'rgba(255, 255, 255, 0.08)',
-        line: 'rgba(255, 255, 255, 0.12)',
-      }
-    : {
-        font: '#18181b',
-        grid: 'rgba(24, 24, 27, 0.08)',
-        line: 'rgba(24, 24, 27, 0.14)',
-      };
 }
 
 export const PlotlyChart: React.FC<PlotlyChartProps> = ({ chartData, chartId }) => {
@@ -26,8 +13,7 @@ export const PlotlyChart: React.FC<PlotlyChartProps> = ({ chartData, chartId }) 
   useEffect(() => {
     if (!containerRef.current || !chartData) return;
 
-    const isDark = document.documentElement.classList.contains('dark');
-    const colors = readThemeColors(isDark);
+    const colors = getChartThemeColors();
 
     try {
       Plotly.purge(containerRef.current);
@@ -90,8 +76,7 @@ export const PlotlyChart: React.FC<PlotlyChartProps> = ({ chartData, chartId }) 
     const root = document.documentElement;
     const observer = new MutationObserver(() => {
       if (!containerRef.current || !chartData) return;
-      const isDark = root.classList.contains('dark');
-      const colors = readThemeColors(isDark);
+      const colors = getChartThemeColors();
       Plotly.relayout(containerRef.current, {
         'font.color': colors.font,
         'xaxis.gridcolor': colors.grid,

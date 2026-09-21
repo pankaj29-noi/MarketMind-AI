@@ -90,8 +90,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({
   useAdaptiveSuggestions = false,
   onRefreshSuggestions,
   activeTab, setActiveTab,
-  isDark: _isDark,
-  onThemeToggle: _onThemeToggle,
+  isDark,
+  onThemeToggle,
 }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [activePath, setActivePath] = useState('/');
@@ -177,6 +177,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({
           rowCount={rowCount}
           hasDataset={hasDataset}
           model={latestModel}
+          isDark={isDark}
+          onThemeToggle={onThemeToggle}
         />
 
         <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">

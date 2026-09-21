@@ -4,6 +4,7 @@ import { toast } from './lib/toast';
 import { API_BASE } from './lib/api';
 import { apiFetch } from './lib/apiFetch';
 import { IntelligenceBackground } from './components/layout/IntelligenceBackground';
+import { applyTheme, readStoredTheme, type ThemeMode } from './lib/theme';
 import {
   fetchSuggestedQuestions,
   fetchFollowupQuestions,
@@ -22,16 +23,8 @@ import type {
 export const App: React.FC = () => {
   // Navigation & UI States
   const [activeTab, setActiveTab] = useState<'analysis' | 'metrics'>('analysis');
-  const [isDark, setIsDark] = useState(() => {
-    try {
-      const saved = localStorage.getItem('marketmind-theme');
-      if (saved === 'light') return false;
-      if (saved === 'dark') return true;
-    } catch {
-      /* private mode */
-    }
-    return true;
-  });
+  const [theme, setTheme] = useState<ThemeMode>(() => readStoredTheme());
+  const isDark = theme === 'dark';
   const [isLeftSidebarCollapsed, setIsLeftSidebarCollapsed] = useState(false);
   const [isRightSidebarCollapsed, setIsRightSidebarCollapsed] = useState(false);
 
@@ -401,20 +394,10 @@ export const App: React.FC = () => {
     ]);
   };
 
-  // Sync dark theme class on document element and persist across reloads
+  // Sync theme class on document element and persist across reloads
   useEffect(() => {
-    const root = window.document.documentElement;
-    if (isDark) {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
-    }
-    try {
-      localStorage.setItem('marketmind-theme', isDark ? 'dark' : 'light');
-    } catch {
-      /* private mode */
-    }
-  }, [isDark]);
+    applyTheme(theme);
+  }, [theme]);
 
   // Sidebar history items
   const sidebarHistory = sessionQueries.map(q => ({
@@ -523,7 +506,7 @@ export const App: React.FC = () => {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         isDark={isDark}
-        onThemeToggle={() => setIsDark(d => !d)}
+        onThemeToggle={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
       />
       </div>
     </div>
