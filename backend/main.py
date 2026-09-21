@@ -589,12 +589,26 @@ async def suggested_questions_endpoint(
     """
     from backend.services.adaptive_questions import generate_suggested_questions
     from backend.services.session_manager import session_manager as sm
+    from backend.mcp.data_access import is_csv_session
 
-    if session_id not in sm.sessions:
-        raise HTTPException(status_code=404, detail="Session not found or expired.")
     dataset_id = (request.dataset_id or "").strip()
     if not dataset_id:
         raise HTTPException(status_code=400, detail="dataset_id is required.")
+
+    # Restore from scratch/Postgres when the in-memory DuckDB session was evicted
+    # (matches /analyze behaviour via is_csv_session).
+    if session_id not in sm.sessions:
+        is_csv_session(session_id)
+    if session_id not in sm.sessions:
+        raise HTTPException(status_code=404, detail="Session not found or expired.")
+
+    duck = sm.sessions.get(session_id)
+    if duck and dataset_id not in (duck.registered_tables or []):
+        raise HTTPException(
+            status_code=400,
+            detail="dataset_id is not registered in this session.",
+        )
+
     count = max(1, min(int(request.count or 8), 10))
     try:
         result = await asyncio.to_thread(
@@ -634,12 +648,24 @@ async def followup_questions_endpoint(
     """
     from backend.services.adaptive_questions import generate_followup_questions
     from backend.services.session_manager import session_manager as sm
+    from backend.mcp.data_access import is_csv_session
 
-    if session_id not in sm.sessions:
-        raise HTTPException(status_code=404, detail="Session not found or expired.")
     dataset_id = (request.dataset_id or "").strip()
     if not dataset_id:
         raise HTTPException(status_code=400, detail="dataset_id is required.")
+
+    if session_id not in sm.sessions:
+        is_csv_session(session_id)
+    if session_id not in sm.sessions:
+        raise HTTPException(status_code=404, detail="Session not found or expired.")
+
+    duck = sm.sessions.get(session_id)
+    if duck and dataset_id not in (duck.registered_tables or []):
+        raise HTTPException(
+            status_code=400,
+            detail="dataset_id is not registered in this session.",
+        )
+
     count = max(1, min(int(request.count or 3), 6))
     try:
         return await asyncio.to_thread(

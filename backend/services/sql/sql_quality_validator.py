@@ -331,6 +331,20 @@ def validate_sql(query: str, schema: Dict[str, Any] = None, question: str = "") 
                 msg = f"Forbidden SQL keyword detected: {kw.strip()}"
             critical_issues.append(msg)
 
+    # Block DuckDB file/table functions that can escape the session dataset
+    file_fn = re.search(
+        r"\b("
+        r"READ_CSV(?:_AUTO)?|READ_PARQUET|PARQUET_SCAN|SCAN_PARQUET|"
+        r"READ_JSON(?:_AUTO)?|READ_NDJSON|READ_BLOB|GLOB|EXCEL_SCAN|"
+        r"ICU_LOAD|HTTPFS|READ_TEXT"
+        r")\s*\(",
+        query_upper,
+    )
+    if file_fn:
+        critical_issues.append(
+            f"Forbidden filesystem/table function detected: {file_fn.group(1)}"
+        )
+
     if critical_issues:
         diagnostics = "CRITICAL ISSUES:\n- " + "\n- ".join(critical_issues)
         return {

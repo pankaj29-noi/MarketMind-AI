@@ -61,9 +61,10 @@ export const PlotlyChart: React.FC<PlotlyChartProps> = ({ chartData, chartId }) 
     }
 
     return () => {
-      if (containerRef.current) {
+      const el = containerRef.current;
+      if (el) {
         try {
-          Plotly.purge(containerRef.current);
+          Plotly.purge(el);
         } catch {
           /* ignore purge errors on unmount */
         }

@@ -102,7 +102,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
   useEffect(() => {
     if (activeTab === 'metrics' && activePath !== '/analytics') setActivePath('/analytics');
     if (activeTab === 'analysis' && activePath === '/analytics') setActivePath('/');
-  }, [activeTab]);
+  }, [activeTab, activePath]);
 
   // Auto-scroll on new messages
   useEffect(() => {

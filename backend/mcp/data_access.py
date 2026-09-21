@@ -290,6 +290,8 @@ def _assert_read_only_sql(query: str) -> None:
     Enforce a single read-only SELECT/WITH statement for DuckDB/Postgres query execution.
     Raises PermissionError on violation.
     """
+    import re
+
     stripped = (query or "").strip()
     if not stripped:
         raise PermissionError("Empty SQL query is not allowed.")
@@ -308,6 +310,20 @@ def _assert_read_only_sql(query: str) -> None:
     for kw in forbidden:
         if kw in padded:
             raise PermissionError(f"Write/DDL/filesystem SQL is restricted ({kw.strip()}).")
+
+    # DuckDB table functions that can read arbitrary host files / network paths
+    file_fn = re.search(
+        r"\b("
+        r"READ_CSV(?:_AUTO)?|READ_PARQUET|PARQUET_SCAN|SCAN_PARQUET|"
+        r"READ_JSON(?:_AUTO)?|READ_NDJSON|READ_BLOB|GLOB|EXCEL_SCAN|"
+        r"ICU_LOAD|HTTPFS|READ_TEXT"
+        r")\s*\(",
+        upper,
+    )
+    if file_fn:
+        raise PermissionError(
+            f"Filesystem/table-function SQL is restricted ({file_fn.group(1)})."
+        )
 
 
 def run_query(session_id: str, dataset_id: str, query: str) -> Dict[str, Any]:

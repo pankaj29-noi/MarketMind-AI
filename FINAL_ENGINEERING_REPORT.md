@@ -1,194 +1,128 @@
 # FINAL_ENGINEERING_REPORT.md
 
-**Date:** 2026-09-21
-**Loop:** audit → fix → test → commit → push → re-measure (7 commits)
-**Suite:** 315 tests, all passing
-**Production:** frontend live; **backend suspended** (blocker)
+**Date:** 2026-09-22  
+**Scope:** Full MarketMind AI recheck → fix → test → verify → commit → push  
+**Repo:** `DataAgent-Pro` (`https://github.com/pankaj29-noi/MarketMind-AI`)
 
 ---
 
-## Architecture (unchanged, reinforced)
+## Verdict
+
+Safe, verified fixes from this pass were implemented and regression-tested.
+**373 / 373** backend tests passed. Frontend `tsc -b && vite build` succeeded.
+Production API remains **unavailable** because Render reports the service as
+**suspended by its owner** — this was verified with a live HTTP probe, not assumed.
+
+---
+
+## Architecture (unchanged)
 
 ```
-USER → intent → requirements → schema → plan → safe SQL → DuckDB
-     → result validation → requirement coverage → grounded answer
+CSV upload → session DuckDB → profile/schema cache
+   → suggested questions (simple, schema-bound, DuckDB-verified)
+   → click → /analyze → SQLCoder/patterns → SQL validate → DuckDB
+   → result validation → grounded report (+ optional chart)
 ```
 
-The LLM is the planner/interpreter. DuckDB is the numerical source of truth.
-Every fix in this loop preserved that split; several closed holes where the
-deterministic path was silently answering the wrong question.
+DuckDB remains the numerical source of truth. Suggested questions never
+hardcode answers; click uses the normal analyze pipeline.
 
 ---
 
-## Before → After
+## Test & build results (this pass)
 
-| Metric | Before (Phase 0) | After |
-|---|---:|---:|
-| Tests | 212 pass / 1 fail | **311 pass / 0 fail** |
-| Fully-failing LLM chain | ~120 s | **2.1 s** |
-| End-to-end p50 (degraded provider) | 132,949 ms | **20 ms** |
-| End-to-end p95 (degraded provider) | 283,849 ms | **1,757 ms** |
-| SIMPLE "total revenue" | 1,340 ms / 1 LLM call | **40 ms / 0 LLM calls** |
-| Avg LLM calls/question (healthy) | 5.6 (measured) | not re-measurable (quota) — budget cuts in place |
-| Percent-of-total-over-top-N | fail after 174.9 s | **23.41% (exact match)** |
-| "Show me sales" | "Analysis Failed" after 125.8 s | **"Clarification Needed" + runnable options** |
-| "employee satisfaction" | revenue ranking, High confidence | **honest abstention** |
-| `/health` with no agent | 200 ok | **503 unavailable** |
-| NL→SQL accuracy evidence | none (SQL-harness 100% was misread as AI accuracy) | **150-question bank; deterministic floor 29.33%** |
-
-Healthy-provider latency cannot be re-measured until the Groq daily token
-budget resets. The degraded-path numbers above are what real users get today
-when the provider is exhausted — and they are now fast because the system
-stops paying for dead round-trips.
-
----
-
-## Accuracy
-
-### Deterministic floor (always available)
-
-`python -m backend.benchmarks.run_nl_sql_benchmark`
-
-| Slice | Pass | Total | Accuracy |
-|---|---:|---:|---:|
-| Overall | 92 | 150 | **61.33%** (was 29.33%) |
-| Simple | 39 | 40 | **97.5%** |
-| Medium | 27 | 41 | **65.9%** |
-| Advanced | 21 | 40 | **52.5%** |
-| Expert | 5 | 29 | **17.2%** |
-| Abstain | 10 | 10 | **100%** |
-| Ambiguous | 1 | 1 | **100%** |
-
-Generation latency on this path: p50 **0.06 ms**, p95 **0.27 ms**.
-
-### What the floor means
-
-- Simple aggregation/count questions are largely covered by the pattern library.
-- Medium/expert questions still need the LLM planner/codegen path.
-- Abstention and ambiguity behaviour is correct — the system no longer invents
-  answers for missing metrics or silently picks a reading.
-
-### Independently verified answers
-
-| Question | Pipeline | Ground truth | Match |
-|---|---|---|---|
-| Top 10 products / revenue | 23.41% | 23.41% of 46,002,445.42 | exact |
-| Top 5 suppliers / profit | 12.49% | 12.49% | exact |
-| Top 3 customer regions / revenue | 61.70% | 61.70% | exact |
-| South = highest region | South | South (9,721,375.45) | exact |
-
----
-
-## Latency
-
-| Path | p50 | p95 | max |
-|---|---:|---:|---:|
-| Upload 4k×24 | 73 ms | — | — |
-| Suggested questions (cold/warm) | 74 / 18 ms | — | — |
-| Degraded-provider `/analyze` (10 q) | **20 ms** | **1,757 ms** | 1,757 ms |
-| Deterministic SQL generation | 0.06 ms | 0.27 ms | 1.83 ms |
-
----
-
-## LLM calls
-
-| Change | Effect |
+| Check | Result |
 |---|---|
-| Dead models pruned | No round-trips to 404s |
-| `max_retries=0` + 20s timeout + 45s chain deadline | Fail-fast instead of 45s client backoff |
-| Circuit breaker | Cooling provider skipped across the request |
-| Response cache | Identical prompts served locally |
-| Supervisor follow-up detection | Self-contained questions skip LLM router |
-| Validator pattern skip | Pre-validated SQL skips LLM semantic opinion |
+| `pytest backend/tests` (before rate-limit isolation) | **361 pass / 6 fail** — all 6 were HTTP **429** from shared limiter |
+| `pytest backend/tests` (after fixes) | **373 pass / 0 fail** (~73s) |
+| Frontend build | **pass** |
+| Frontend lint (`oxlint`) | warnings only (no errors) |
+| Multi-schema E2E (HR 3200 + IoT) | **pass** — 8 questions each, SQL validate + DuckDB execute |
+| Suggestion gen @ 3200 rows | **245 ms** (cold profile+validate) |
+| Suggestion gen @ 200 rows (IoT) | **21 ms** |
 
 ---
 
-## Security issues
+## Fixes implemented (verified)
 
-| Issue | Status |
-|---|---|
-| SQL read-only guard | Already solid; unchanged |
-| Python sandbox | Already solid; unchanged |
-| Secrets in git | Clean (`.env` gitignored) |
-| CORS explicit allowlist | Unchanged, correct |
-| `/health` leaking credentials | Verified absent |
-| Hallucinated answers for missing metrics | **Fixed** |
-| Ranking offered as a percentage | **Fixed** |
-| Silent guess on ambiguous questions | **Fixed** |
+### Security
+1. **DuckDB filesystem table-functions blocked** in `_assert_read_only_sql` and
+   `validate_sql` (`read_csv`, `parquet_scan`, `glob`, etc.).
+2. **Python sandbox hardened** — `open()` limited to `result.json`; pandas
+   `read_*` / `to_csv` limited to relative scratch filenames.
+3. **CSV prompt-injection hardening** — sample tokens sanitized in
+   `sqlcoder_schema` and `format_schema_context_for_llm`; SQLCoder prompt
+   states samples are untrusted DATA.
 
-Remaining (P2, not blocking):
-- `SANDBOX_MEMORY_LIMIT_MB` configured but not enforced
-- CORS `allow_methods=["*"]` / `allow_headers=["*"]` broader than needed
-- No authentication on any endpoint (rate limiting is the sole abuse control)
+### Reliability / product
+4. **Pytest rate-limit isolation** — suite no longer fails with false 429s.
+5. **Suggested/followup session restore** — uses `is_csv_session` like `/analyze`;
+   rejects `dataset_id` not registered on the session.
+6. **Expensive endpoint limit** raised 20→40 / 60s (safer for suggestion click-through).
 
----
-
-## Tests
-
-| | Before | After |
-|---|---:|---:|
-| Collected | 213 | 311 |
-| Passed | 212 | **311** |
-| Failed | 1 (live LLM quota) | **0** |
-
-New suites this loop: provider chain, lead degradation, call budget, LLM cache,
-circuit breaker, percent-of-total, ambiguity, health readiness, unsupported-metric
-abstention.
+### Frontend / UX
+7. **Lazy-loaded Plotly** — initial bundle **5,479 kB → 871 kB** (Plotly in
+   deferred chunk ~4.6 MB).
+8. Plotly cleanup ref copy; Workspace `activePath` effect deps fixed.
+9. Suggestion wording: “top 5 {dim} values by {metric}”.
 
 ---
 
-## Deployment status
+## Suggested questions (reconfirmed)
 
-| Endpoint | Status |
-|---|---|
-| `https://marketmind-ai-pankaj.vercel.app` | 200 (frontend) |
-| `https://marketmind-api.onrender.com/health` | **503 — service suspended by owner** |
-| `https://marketmind-api.vercel.app/health` | 404 |
-
-**BLOCKER:** production has no reachable backend. Code is on `main` and would
-deploy on unsuspend (`autoDeploy: true`), with `GEMINI_FALLBACK_MODEL` already
-updated to `gemini-3.6-flash` in `render.yaml`.
+- Cap **5–10**, simple/quick only (`GENERATION_VERSION=v3-simple-only`)
+- Schema-derived column names only
+- Each candidate validated + DuckDB-executed before display
+- Click path remains Question → SQL → validate → DuckDB → grounded answer
+- Non-demo schemas (HR salary/department, IoT temp/site) produce adapted
+  questions with **no** hardcoded revenue/product assumptions
 
 ---
 
-## Git commits this loop
+## Theme
 
-```
-f0e8efe test: add 150-question NL→SQL benchmark and stop inventing missing metrics
-49f199a fix: make /health a real readiness probe
-70853d7 feat: clarify ambiguous questions instead of failing on them
-78e953f fix: answer percent-of-total questions with a proportion, not a ranking
-43ac64b perf: add per-provider circuit breaker for rate-limited LLMs
-604a233 perf: cut LLM calls per question with a response cache and deterministic skips
-ee51601 perf: fail fast on degraded LLM providers instead of walking dead models
-```
+- Persistence via `localStorage` (`marketmind-theme`) + early `<head>` script
+  (no FOUC)
+- Charts re-theme via `MutationObserver` on `documentElement.class`
 
 ---
 
-## Remaining limitations
+## Deployment status (live probes)
 
-1. **Production backend is down** — needs manual unsuspend on Render.
-2. **LLM-path accuracy unmeasured** — Groq daily quota exhausted; re-run
-   `python -m backend.benchmarks.run_pipeline_latency` after reset.
-3. **Deterministic expert accuracy is 0%** — expected; expert questions need
-   the planner/codegen path. Expanding the pattern library for top-N-per-group,
-   YoY, and multi-condition would raise the floor without an LLM.
-4. **Frontend bundle is 5.5 MB** — not touched this loop.
-5. **No load test** — session isolation under concurrency is still unproven.
+| Target | Probe | Result |
+|---|---|---|
+| `https://marketmind-api.onrender.com/health` | GET | **503** HTML: “This service has been suspended by its owner.” |
+| `https://marketmind-ai.vercel.app/` | GET | **200**, but serves a **different** “Market Mind Mentor” app (not this frontend build) |
+
+**Action required (manual, outside code):** unsuspend / redeploy Render
+`marketmind-api`, and confirm the Vercel project tied to
+`frontend/.vercel/project.json` (`marketmind-ai`) auto-deploys this repo’s
+`frontend/` and points `VITE_API_BASE_URL` at the live API.
 
 ---
 
-## Stop-condition check
+## Remaining limitations (honest)
 
-| Criterion | Status |
-|---|---|
-| No unresolved P0 correctness/security bugs in code | **Met** (remaining P0 is the external Render suspend) |
-| High-impact P1s fixed | **Met** (percent, ambiguity, health, call budget, chain) |
-| Regression suite passes | **Met** (311/311) |
-| Benchmark completed | **Met** (150 questions, independent ground truth) |
-| Performance measured | **Met** (degraded path; healthy path blocked by quota) |
-| Deployment verified | **Blocked** — Render suspended by owner |
+1. **Render API suspended** — no production smoke analyze possible until unsuspended.
+2. **Python sandbox** is defense-in-depth (AST + scrubbed env + timeout), not a
+   full OS jail/cgroup.
+3. **`session_manager.execute_query`** still allows internal profiling SQL
+   (PRAGMA); user/LLM SQL continues to go through `run_query` + read-only gate.
+4. **Cloud LLM quotas** in the developer environment still cause degraded-path
+   analyze behaviour when Groq/Gemini are rate-limited; deterministic patterns /
+   DEMO fallback cover many simple questions.
+5. Plotly remains large when charts are shown (deferred, not eliminated).
 
-The system is in a state where the next meaningful gains require either
-(a) unsuspending production, or (b) a Groq quota reset so the LLM path can be
-re-measured and the expert-question gap closed with evidence rather than hope.
+---
+
+## Commits in this loop
+
+- Prior: `d23ff13` simple DuckDB-verified suggested questions
+- This pass: security + reliability + bundle split (see git history after push)
+
+---
+
+## Principle applied
+
+CHECK → FIND → FIX (safe) → TEST → VERIFY → MEASURE → COMMIT → PUSH → PROBE DEPLOY  
+Nothing above is claimed fixed unless it was executed and observed in this pass.

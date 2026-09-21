@@ -11,10 +11,24 @@ def test_ast_rejects_os_and_subprocess():
         "eval('1+1')\n",
         "exec('x=1')\n",
         "__import__('os')\n",
+        "open('/etc/passwd').read()\n",
+        "import pandas as pd\npd.read_csv('/etc/passwd')\n",
     ):
         ok, msg = validate_python_code(code)
         assert ok is False, code
         assert msg
+
+
+def test_ast_allows_sandbox_wrapper_io_patterns():
+    code = (
+        "import pandas as pd\n"
+        "import json\n"
+        'df = pd.read_csv("uploaded_data_abc.csv")\n'
+        'with open("result.json", "w") as f:\n'
+        "    json.dump({'result': None}, f)\n"
+    )
+    ok, msg = validate_python_code(code)
+    assert ok is True, msg
 
 
 def test_sandbox_rejects_before_spawn(tmp_path, monkeypatch):

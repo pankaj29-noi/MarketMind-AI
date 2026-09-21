@@ -4,6 +4,22 @@ Every logical fix from the autonomous audit → fix → test → verify loop.
 
 ---
 
+## 2026-09-22 — final full recheck
+
+**fix: close SQL/Python filesystem escapes, harden CSV prompt injection, isolate test rate limits, shrink initial frontend bundle**
+
+| | |
+|---|---|
+| **Problem** | Full-suite 429 flakiness; DuckDB `read_csv`/`parquet_scan`/`glob` passed “read-only” gates; Python sandbox allowed `open()` and absolute `pd.read_csv`; CSV cell samples could inject instructions into LLM schema prompts; initial JS bundle ~5.5MB from eager Plotly. |
+| **Root cause** | Shared sliding-window limiter leaked across TestClient; guards only blocked statement keywords; AST allowlist omitted builtins/`read_*` paths; `format_schema_context_for_llm` echoed raw samples; ChartCard imported Plotly at module scope. |
+| **Solution** | Pytest autouse high-limit limiter; block DuckDB file table-functions in `_assert_read_only_sql` + `validate_sql`; restrict `open`/`read_*` to relative scratch filenames; sanitize schema samples + SQLCoder data-only framing; restore suggested/followup sessions via `is_csv_session`; lazy-load Plotly; raise expensive rate limit 20→40/min. |
+| **Tests** | Full suite **373 passed / 0 failed**. New regressions for file-function SQL, sandbox I/O, sample injection. Multi-schema E2E (HR 3200 rows + IoT): 8 verified questions each, SQL+DuckDB OK; suggestion gen **245ms** @ 3.2k rows. |
+| **Performance** | Initial JS **5,479 → 871 kB** (Plotly deferred to separate chunk). |
+| **Accuracy** | Suggestion path unchanged (simple-only + DuckDB verify). |
+| **Deploy** | Pushed to `main`. Render API still **suspended** (manual unsuspend required). |
+
+---
+
 ## 2026-09-22 — `ede34be`
 
 **feat: add built-in Demo Data (~40 rows) with verified starter questions**

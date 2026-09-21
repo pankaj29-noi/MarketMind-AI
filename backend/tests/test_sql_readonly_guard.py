@@ -15,6 +15,10 @@ from backend.mcp.data_access import _assert_read_only_sql
         "INSERT INTO products VALUES (1)",
         "CREATE TABLE t(x INT)",
         "EXPORT DATABASE '/tmp/db'",
+        "SELECT COUNT(*) FROM read_csv('/etc/passwd')",
+        "SELECT * FROM read_csv_auto('/tmp/x.csv')",
+        "SELECT * FROM parquet_scan('/tmp/x.parquet')",
+        "SELECT * FROM glob('/etc/*')",
     ],
 )
 def test_assert_read_only_rejects_dangerous(query):

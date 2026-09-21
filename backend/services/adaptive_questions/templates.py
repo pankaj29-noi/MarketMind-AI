@@ -178,7 +178,7 @@ def generate_candidates(
             _add(
                 QuestionCandidate(
                     id=_qid("top5", dim, measure),
-                    text=f"What are the top 5 {dlabel} by {mlabel}?",
+                    text=f"What are the top 5 {_human(dim)} values by {mlabel}?",
                     category="ranking",
                     difficulty="easy",
                     intent="top_n_by_measure",

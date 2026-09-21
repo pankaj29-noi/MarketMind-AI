@@ -26,8 +26,9 @@ class SlidingWindowRateLimiter:
         return True
 
 
-# Conservative defaults for a public portfolio API on free-tier hosts
-_expensive = SlidingWindowRateLimiter(max_requests=20, window_seconds=60)
+# Conservative defaults for a public portfolio API on free-tier hosts.
+# 40/min allows a short suggestion click-through without false 429s.
+_expensive = SlidingWindowRateLimiter(max_requests=40, window_seconds=60)
 
 
 def _client_key(request: Request) -> str:
