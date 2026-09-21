@@ -73,6 +73,7 @@ def validator_node(state: AgentState) -> Dict[str, Any]:
                 "provider_error",
                 "unsupported_question",
                 "semantic_incomplete",
+                "ambiguous_question",
             ):
                 failure_summary = existing_failure
                 logger.warning(
@@ -222,6 +223,7 @@ def validator_node(state: AgentState) -> Dict[str, Any]:
                 "provider_error",
                 "unsupported_question",
                 "semantic_incomplete",
+                "ambiguous_question",
             ):
                 failure_summary = existing_failure
                 logger.warning(

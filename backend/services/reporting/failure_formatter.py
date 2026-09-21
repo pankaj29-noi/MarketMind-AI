@@ -25,6 +25,8 @@ def map_error_to_resolution(failure_type: str) -> str:
             "Ask about products, suppliers, buyers, leads, orders, or categories "
             "using the loaded marketplace demo tables."
         )
+    elif failure_type in ["ambiguous_question", "ambiguous"]:
+        return "Restate the question naming the specific measure or breakdown you want."
     elif failure_type in ["provider_error", "provider"]:
         return "Set a valid GROQ_API_KEY in DataAgent-Pro/.env (and optionally GOOGLE_API_KEY), then restart the backend."
     else:
@@ -52,6 +54,11 @@ def map_error_to_summary(failure_type: str) -> str:
     elif failure_type in ["unsupported_question", "unsupported"]:
         return (
             "I couldn't answer this question using the currently loaded marketplace dataset."
+        )
+    elif failure_type in ["ambiguous_question", "ambiguous"]:
+        return (
+            "This question has more than one valid reading against the loaded dataset, "
+            "so answering one reading would risk answering the wrong question."
         )
     elif failure_type in ["provider_error", "provider"]:
         return "The LLM provider could not authenticate or complete the request. Marketplace demo data is loaded; analytics needs a valid API key."
@@ -111,14 +118,25 @@ def generate_failure_report(state: AgentState) -> Dict[str, Any]:
     resolution = map_error_to_resolution(failure_type)
     # Prefer actionable message already set by planner/code_generator
     if (
-        failure_type.lower() in ["provider_error", "provider", "unsupported_question", "unsupported"]
+        failure_type.lower()
+        in [
+            "provider_error",
+            "provider",
+            "unsupported_question",
+            "unsupported",
+            "ambiguous_question",
+            "ambiguous",
+        ]
         and error_message
     ):
         summary = error_message
     location = determine_failure_location(state)
 
     ft = failure_type.lower()
-    if ft in ("unsupported_question", "unsupported"):
+    if ft in ("ambiguous_question", "ambiguous"):
+        title = "Clarification Needed"
+        headline = "Clarification Needed"
+    elif ft in ("unsupported_question", "unsupported"):
         title = "Unable to Analyze This Question"
         headline = "Unable to Analyze This Question"
     elif ft in ("provider_error", "provider"):

@@ -206,6 +206,27 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
 
     schema_context = format_schema_context_for_llm(schema_profile or {}, fallback_table=table_name)
 
+    # A question that cannot be pinned to one reading must be clarified, not guessed at.
+    if approach == "sql" and retry_count == 0:
+        from backend.services.ambiguity import detect_ambiguity
+
+        ambiguity = detect_ambiguity(question, schema_profile or {})
+        if ambiguity:
+            logger.info("Question is %s (%s); asking for clarification.", ambiguity.kind, ambiguity.term)
+            outcome = _finish(
+                "",
+                source=ANALYSIS_SOURCE_FALLBACK,
+                failed=True,
+                failure={
+                    "failure_type": "ambiguous_question",
+                    "error_message": ambiguity.message(),
+                    "code_context": "",
+                    "expected_vs_actual": f"{ambiguity.kind}: {ambiguity.term}",
+                },
+            )
+            outcome["analysis_artifacts"]["ambiguity"] = ambiguity.to_dict()
+            return outcome
+
     # FAST PATH: schema-adaptive pattern SQL for SIMPLE questions (0 LLM).
     if approach == "sql" and complexity == "SIMPLE" and retry_count == 0:
         cols = (schema_profile or {}).get("columns") or []
