@@ -311,8 +311,8 @@ def invoke_llm(messages, temperature: float = 0.0) -> dict:
     Returns: {content, provider, model, analysis_source}
     analysis_source is 'groq' | 'gemini'.
     """
-    from backend.services import llm_cache
-    from backend.utils.provider_errors import is_model_unavailable_error
+    from backend.services import llm_cache, llm_circuit
+    from backend.utils.provider_errors import is_model_unavailable_error, is_rate_limit_error
 
     cache_key = llm_cache.make_key(messages, temperature) if llm_cache.is_cacheable(temperature) else None
     if cache_key:
@@ -333,6 +333,11 @@ def invoke_llm(messages, temperature: float = 0.0) -> dict:
         return seen
 
     def _try(provider: str, models: list[str], build, source: str):
+        if llm_circuit.is_open(provider):
+            remaining = llm_circuit.cooldown_remaining(provider)
+            errors.append(f"{source}:skipped, cooling down {remaining:.0f}s after a rate limit")
+            logger.info("%s skipped: circuit open for another %.0fs.", provider, remaining)
+            return None
         for model in models:
             if time.monotonic() >= deadline:
                 errors.append(f"{source}[{model}]:skipped, chain deadline exceeded")
@@ -353,9 +358,19 @@ def invoke_llm(messages, temperature: float = 0.0) -> dict:
                 }
                 if cache_key:
                     llm_cache.set(cache_key, payload)
+                llm_circuit.reset(provider)
                 return dict(payload, cache_hit=False)
             except Exception as exc:
                 errors.append(f"{source}[{model}]:{exc}")
+                if is_rate_limit_error(str(exc)) and model == models[-1]:
+                    # Every model for this provider is rate limited; stop paying for
+                    # round-trips until the provider's own retry window elapses.
+                    wait = llm_circuit.trip(provider, str(exc))
+                    logger.warning(
+                        "%s rate limited on all candidates; cooling down for %.0fs.",
+                        provider,
+                        wait,
+                    )
                 if is_model_unavailable_error(str(exc)):
                     logger.warning(
                         "%s model %s is unavailable (retired or no access) — consider removing it "
