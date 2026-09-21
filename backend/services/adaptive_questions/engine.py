@@ -14,7 +14,6 @@ from backend.services.adaptive_questions.advanced_patterns import (
     TIER_QUICK,
     build_followups,
     compute_complexity_score,
-    generate_advanced_candidates,
 )
 from backend.services.adaptive_questions.capabilities import build_capabilities
 from backend.services.adaptive_questions.profiler import profile_dataset
@@ -26,80 +25,28 @@ from backend.services.adaptive_questions.validator import validate_candidates
 logger = logging.getLogger(__name__)
 
 # Bump when generation logic changes so old caches are invalidated.
-GENERATION_VERSION = "v2-tiered"
+GENERATION_VERSION = "v3-simple-only"
 
 _TIER_ORDER = [TIER_QUICK, TIER_ANALYTICS, TIER_ADVANCED, TIER_EXPERT]
 
 _OPERATION_HINTS = {
-    "above_overall_average": ["aggregation", "comparison", "above_average"],
-    "concentration_top_n": ["aggregation", "percent_of_total", "ranking"],
-    "top_n_min_sample": ["aggregation", "having", "ranking", "min_sample"],
-    "high_low_tradeoff": ["aggregation", "comparison", "multi_metric"],
-    "above_group_average": ["aggregation", "group_average", "comparison"],
-    "year_over_year": ["time_analysis", "window", "comparison"],
-    "growth_with_decline": ["time_analysis", "window", "multi_metric", "comparison"],
-    "latest_year_top_share": ["time_analysis", "ranking", "percent_of_total"],
-    "top_n_per_group_min_sample": ["window", "ranking", "min_sample", "group"],
-    "group_leader_contribution": ["window", "ranking", "percent_of_total"],
-    "entity_min_sample_above_avg": ["aggregation", "min_sample", "comparison", "ranking"],
-    "cumulative_pareto": ["window", "cumulative", "percent_of_total", "concentration"],
-    "top_quintile_with_weak_second_metric": [
-        "window",
-        "percentile",
-        "multi_metric",
-        "group_average",
-    ],
-    "multi_condition_min_sample_rank": [
-        "aggregation",
-        "min_sample",
-        "multi_metric",
-        "comparison",
-        "ranking",
-    ],
-    "outlier_high": ["statistics", "outlier"],
-    "conditional_share": ["conditional_aggregation", "percent_of_total"],
     "top_group_by_measure": ["aggregation", "ranking"],
-    "pct_contribution": ["aggregation", "percent_of_total"],
-    "monthly_trend": ["time_analysis", "aggregation"],
-    "above_average_group": ["aggregation", "comparison"],
+    "bottom_group_by_measure": ["aggregation", "ranking"],
+    "group_by_measure": ["aggregation", "group"],
+    "top_n_by_measure": ["aggregation", "ranking"],
+    "count_by_dimension": ["count", "group"],
     "sum_measure": ["aggregation"],
     "avg_measure": ["aggregation"],
     "row_count": ["count"],
     "distinct_entity": ["count", "distinct"],
     "distinct_dimension": ["distinct"],
-    "group_compare": ["aggregation", "comparison"],
-    "corr_pair": ["statistics", "relationship"],
 }
 
 
 def _tier_targets(complexity: Dict[str, Any], count: int) -> Dict[str, int]:
-    """Adaptive per-tier targets based on dataset capability band."""
-    band = complexity.get("band")
-    if band == "rich":
-        base = {TIER_QUICK: 3, TIER_ANALYTICS: 3, TIER_ADVANCED: 5, TIER_EXPERT: 3}
-    elif band == "moderate":
-        base = {TIER_QUICK: 3, TIER_ANALYTICS: 3, TIER_ADVANCED: 4, TIER_EXPERT: 2}
-    elif band == "basic":
-        base = {TIER_QUICK: 3, TIER_ANALYTICS: 3, TIER_ADVANCED: 2, TIER_EXPERT: 0}
-    else:
-        base = {TIER_QUICK: 3, TIER_ANALYTICS: 2, TIER_ADVANCED: 0, TIER_EXPERT: 0}
-
-    if not complexity.get("advanced_possible"):
-        base[TIER_ADVANCED] = 0
-    if not complexity.get("expert_possible"):
-        base[TIER_EXPERT] = 0
-
-    total = sum(base.values()) or 1
-    # Only scale down to respect a smaller requested count; never inflate a
-    # limited dataset into more questions than its capabilities justify.
-    if count and count < total:
-        scale = count / total
-        scaled = {k: int(round(v * scale)) for k, v in base.items()}
-        for k, v in base.items():
-            if v > 0 and scaled.get(k, 0) == 0:
-                scaled[k] = 1
-        base = scaled
-    return base
+    """Simple-only suggestions: all seats in the quick tier (5–10)."""
+    n = max(1, min(int(count or 8), 10))
+    return {TIER_QUICK: n, TIER_ANALYTICS: 0, TIER_ADVANCED: 0, TIER_EXPERT: 0}
 
 
 def _to_api(c, tier: str) -> Dict[str, Any]:
@@ -122,39 +69,20 @@ def _to_api(c, tier: str) -> Dict[str, Any]:
     }
 
 
-_INTENT_FAMILY = {
-    "above_overall_average": "above_average",
-    "above_average_group": "above_average",
-    "top_group_by_measure": "ranking",
-    "group_compare": "ranking",
-    "pct_contribution": "share",
-    "conditional_share": "share",
-    "concentration_top_n": "concentration",
-    "monthly_trend": "time",
-    "year_over_year": "time",
-    "sum_measure": "totals",
-    "avg_measure": "totals",
-}
-
-
-def _family(intent: str) -> str:
-    return _INTENT_FAMILY.get(intent, intent)
-
-
 def _select_tiered(
     valid: List[Any],
     targets: Dict[str, int],
     exclude_ids: List[str],
 ) -> List[Dict[str, Any]]:
-    """Diversity-aware selection per tier (never repeats analytical families)."""
+    """Diversity-aware selection: unique intent+columns pairs, prefer variety."""
     by_tier: Dict[str, List[Any]] = {t: [] for t in _TIER_ORDER}
     for c in valid:
-        tier = DIFFICULTY_TO_TIER.get(c.difficulty, TIER_ANALYTICS)
+        tier = DIFFICULTY_TO_TIER.get(c.difficulty, TIER_QUICK)
         by_tier.setdefault(tier, []).append(c)
 
     picked: List[Dict[str, Any]] = []
+    used_keys: set = set()
     used_intents: set = set()
-    used_families: set = set()
     for tier in _TIER_ORDER:
         want = targets.get(tier, 0)
         if want <= 0:
@@ -162,27 +90,29 @@ def _select_tiered(
         pool = [c for c in by_tier.get(tier, []) if c.id not in exclude_ids]
         ordered = select_diverse(pool, max(want * 3, want))
         taken = 0
+        # Pass 1: prefer unique intents
         for c in ordered:
             if taken >= want:
                 break
-            if c.intent in used_intents or _family(c.intent) in used_families:
+            key = (c.intent, tuple(c.columns_used))
+            if key in used_keys or c.intent in used_intents:
                 continue
+            used_keys.add(key)
             used_intents.add(c.intent)
-            used_families.add(_family(c.intent))
             picked.append(_to_api(c, tier))
             taken += 1
-        # Backfill within tier if the diversity filter was too strict
+        # Pass 2: allow same intent with different columns (e.g. total sales + total qty)
         if taken < want:
             for c in ordered:
                 if taken >= want:
                     break
-                if c.intent in used_intents:
+                key = (c.intent, tuple(c.columns_used))
+                if key in used_keys:
                     continue
-                used_intents.add(c.intent)
+                used_keys.add(key)
                 picked.append(_to_api(c, tier))
                 taken += 1
     return picked
-
 
 def generate_suggested_questions(
     session_id: str,
@@ -265,32 +195,39 @@ def generate_suggested_questions(
         return payload
 
     candidates = generate_candidates(profile, capabilities, semantics)
-    candidates += generate_advanced_candidates(profile, capabilities, semantics)
+    # v3-simple-only: never attach advanced/expert multi-step candidates.
+
+    # Cap candidate volume before expensive validation (pipeline SQL + DuckDB).
+    candidates = candidates[:24]
 
     valid, rejected = validate_candidates(session_id, profile, candidates)
 
+    # Requested count clamped to 5–10 (or fewer if dataset cannot support 5).
+    count = max(1, min(int(count or 8), 10))
     targets = _tier_targets(complexity, count)
     questions = _select_tiered(valid, targets, exclude_ids)
 
-    # Backfill only within tiers this dataset actually supports — never force
-    # advanced/expert questions onto a simple dataset.
+    # Backfill only within the quick tier — never invent advanced questions.
     allowed_tiers = {t for t, n in targets.items() if n > 0}
-    target_total = min(count, sum(targets.values()))
+    target_total = min(count, sum(targets.values()), len(valid))
     if len(questions) < target_total:
         chosen = {q["id"] for q in questions} | set(exclude_ids)
         remaining = [
             c
             for c in valid
             if c.id not in chosen
-            and DIFFICULTY_TO_TIER.get(c.difficulty, TIER_ANALYTICS) in allowed_tiers
+            and DIFFICULTY_TO_TIER.get(c.difficulty, TIER_QUICK) in allowed_tiers
         ]
         for c in select_diverse(remaining, target_total):
             if len(questions) >= target_total:
                 break
-            questions.append(_to_api(c, DIFFICULTY_TO_TIER.get(c.difficulty, TIER_ANALYTICS)))
+            questions.append(_to_api(c, TIER_QUICK))
             chosen.add(c.id)
 
-    pool = [_to_api(c, DIFFICULTY_TO_TIER.get(c.difficulty, TIER_ANALYTICS)) for c in valid]
+    # Never pad with invented questions — show only what validated.
+    questions = questions[:count]
+
+    pool = [_to_api(c, TIER_QUICK) for c in valid]
     if cached_pool:
         known = {p["id"] for p in pool}
         pool += [p for p in cached_pool if p.get("id") not in known]
@@ -304,10 +241,9 @@ def generate_suggested_questions(
     message = profile.message
     if not questions:
         message = message or "This dataset has limited analytical fields."
-    elif not complexity.get("expert_possible") and complexity.get("band") in {"basic", "minimal"}:
+    else:
         message = message or (
-            "This dataset supports mostly direct questions — "
-            "advanced multi-step analysis needs more measures or a date column."
+            f"{len(questions)} simple starter questions verified against this CSV."
         )
 
     payload = {

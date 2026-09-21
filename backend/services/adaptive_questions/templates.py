@@ -1,10 +1,13 @@
-"""Deterministic question templates bound to real columns + proof SQL."""
+"""Deterministic simple question templates bound to real columns + proof SQL.
+
+Only easy, practical questions — no advanced / multi-step / expert intents.
+"""
 from __future__ import annotations
 
 import hashlib
 import re
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List
 
 from backend.services.adaptive_questions.capabilities import DatasetCapabilityMap
 from backend.services.adaptive_questions.profiler import DatasetProfile
@@ -41,16 +44,35 @@ def generate_candidates(
     capabilities: DatasetCapabilityMap,
     semantics: List[SemanticColumn],
 ) -> List[QuestionCandidate]:
+    """
+    Build ONLY simple schema-grounded candidates.
+
+    Preferred shapes:
+      - total / average of a numeric column
+      - record count
+      - highest / lowest category by metric
+      - metric by category
+      - top 5 items by metric
+      - counts per category
+    """
     table = _ident(profile.table)
     out: List[QuestionCandidate] = []
     conf_map = capabilities.column_confidence
     sem_by = {s.column: s for s in semantics}
+    seen_text: set[str] = set()
 
-    # Overview
-    out.append(
+    def _add(c: QuestionCandidate) -> None:
+        key = c.text.strip().lower()
+        if key in seen_text:
+            return
+        seen_text.add(key)
+        out.append(c)
+
+    # How many records?
+    _add(
         QuestionCandidate(
             id=_qid("overview", "rows", profile.table),
-            text="How many records are in this dataset?",
+            text="How many records are there?",
             category="overview",
             difficulty="easy",
             intent="row_count",
@@ -60,32 +82,17 @@ def generate_candidates(
         )
     )
 
-    if capabilities.dimensions:
-        dim = capabilities.dimensions[0]
-        out.append(
-            QuestionCandidate(
-                id=_qid("overview", "dims", dim),
-                text=f"What are the distinct values of {_human(dim)}?",
-                category="overview",
-                difficulty="easy",
-                intent="distinct_dimension",
-                proof_sql=(
-                    f"SELECT DISTINCT {_ident(dim)} AS {_ident(dim)} FROM {table} "
-                    f"WHERE {_ident(dim)} IS NOT NULL LIMIT 50"
-                ),
-                confidence=conf_map.get(dim, 0.8),
-                columns_used=[dim],
-            )
-        )
+    measures = list(capabilities.measures[:4])
+    dimensions = list(capabilities.dimensions[:4])
 
-    # Aggregation / ranking / grouping
-    for measure in capabilities.measures[:4]:
+    # Total / average of each numeric measure
+    for measure in measures:
         mconf = conf_map.get(measure, 0.75)
         mlabel = _human(measure)
-        out.append(
+        _add(
             QuestionCandidate(
                 id=_qid("agg", "sum", measure),
-                text=f"What is the total {_human(measure)} across all records?",
+                text=f"What is the total {mlabel}?",
                 category="aggregation",
                 difficulty="easy",
                 intent="sum_measure",
@@ -94,10 +101,10 @@ def generate_candidates(
                 columns_used=[measure],
             )
         )
-        out.append(
+        _add(
             QuestionCandidate(
                 id=_qid("agg", "avg", measure),
-                text=f"What is the average {_human(measure)}?",
+                text=f"What is the average {mlabel}?",
                 category="aggregation",
                 difficulty="easy",
                 intent="avg_measure",
@@ -107,157 +114,139 @@ def generate_candidates(
             )
         )
 
-        for dim in capabilities.dimensions[:3]:
+    # Category × metric: highest, lowest, by-category, top 5, counts
+    for measure in measures[:3]:
+        mlabel = _human(measure)
+        mconf = conf_map.get(measure, 0.75)
+        for dim in dimensions[:3]:
+            dlabel = _human(dim)
             dconf = min(mconf, conf_map.get(dim, 0.75))
-            out.append(
+            _add(
                 QuestionCandidate(
-                    id=_qid("rank", dim, measure),
-                    text=f"Which {_human(dim)} has the highest total {_human(measure)}?",
+                    id=_qid("rank", "high", dim, measure),
+                    text=f"Which {dlabel} has the highest {mlabel}?",
                     category="ranking",
-                    difficulty="medium",
+                    difficulty="easy",
                     intent="top_group_by_measure",
                     proof_sql=(
                         f"SELECT {_ident(dim)} AS {_ident(dim)}, "
                         f"SUM({_ident(measure)}) AS total_{measure} "
                         f"FROM {table} WHERE {_ident(dim)} IS NOT NULL "
-                        f"GROUP BY {_ident(dim)} ORDER BY total_{measure} DESC LIMIT 10"
+                        f"GROUP BY {_ident(dim)} "
+                        f"ORDER BY total_{measure} DESC LIMIT 1"
                     ),
                     confidence=dconf,
                     columns_used=[dim, measure],
                 )
             )
-            out.append(
+            _add(
                 QuestionCandidate(
-                    id=_qid("compare", dim, measure),
-                    text=f"How does total {_human(measure)} compare across {_human(dim)}?",
-                    category="group_comparison",
-                    difficulty="medium",
-                    intent="group_compare",
+                    id=_qid("rank", "low", dim, measure),
+                    text=f"Which {dlabel} has the lowest {mlabel}?",
+                    category="ranking",
+                    difficulty="easy",
+                    intent="bottom_group_by_measure",
                     proof_sql=(
                         f"SELECT {_ident(dim)} AS {_ident(dim)}, "
-                        f"SUM({_ident(measure)}) AS total_{measure}, "
-                        f"COUNT(*) AS row_count "
-                        f"FROM {table} WHERE {_ident(dim)} IS NOT NULL "
-                        f"GROUP BY {_ident(dim)} ORDER BY total_{measure} DESC LIMIT 25"
-                    ),
-                    confidence=dconf,
-                    columns_used=[dim, measure],
-                )
-            )
-            out.append(
-                QuestionCandidate(
-                    id=_qid("pct", dim, measure),
-                    text=f"What share of total {_human(measure)} comes from each {_human(dim)}?",
-                    category="percentage",
-                    difficulty="hard",
-                    intent="pct_contribution",
-                    proof_sql=(
-                        f"SELECT {_ident(dim)} AS {_ident(dim)}, "
-                        f"SUM({_ident(measure)}) AS total_{measure}, "
-                        f"ROUND(100.0 * SUM({_ident(measure)}) / NULLIF((SELECT SUM({_ident(measure)}) FROM {table}), 0), 2) "
-                        f"AS pct_of_total "
-                        f"FROM {table} WHERE {_ident(dim)} IS NOT NULL "
-                        f"GROUP BY {_ident(dim)} ORDER BY total_{measure} DESC LIMIT 25"
-                    ),
-                    confidence=dconf * 0.95,
-                    columns_used=[dim, measure],
-                )
-            )
-
-    # Time trends
-    for tcol in capabilities.time_dimensions[:2]:
-        for measure in capabilities.measures[:2]:
-            conf = min(conf_map.get(tcol, 0.85), conf_map.get(measure, 0.75))
-            out.append(
-                QuestionCandidate(
-                    id=_qid("trend", tcol, measure),
-                    text=f"How has {_human(measure)} changed over time by month?",
-                    category="time_analysis",
-                    difficulty="medium",
-                    intent="monthly_trend",
-                    proof_sql=(
-                        f"SELECT DATE_TRUNC('month', TRY_CAST({_ident(tcol)} AS TIMESTAMP)) AS month, "
                         f"SUM({_ident(measure)}) AS total_{measure} "
-                        f"FROM {table} WHERE TRY_CAST({_ident(tcol)} AS TIMESTAMP) IS NOT NULL "
-                        f"GROUP BY 1 ORDER BY 1 LIMIT 48"
+                        f"FROM {table} WHERE {_ident(dim)} IS NOT NULL "
+                        f"GROUP BY {_ident(dim)} "
+                        f"ORDER BY total_{measure} ASC LIMIT 1"
                     ),
-                    confidence=conf,
-                    columns_used=[tcol, measure],
+                    confidence=dconf,
+                    columns_used=[dim, measure],
                 )
             )
-
-    # Conditional / above average
-    for measure in capabilities.measures[:2]:
-        for dim in capabilities.dimensions[:2]:
-            conf = min(conf_map.get(measure, 0.75), conf_map.get(dim, 0.75))
-            out.append(
+            _add(
                 QuestionCandidate(
-                    id=_qid("cond", dim, measure),
-                    text=f"Which {_human(dim)} values have above-average {_human(measure)}?",
-                    category="conditional",
-                    difficulty="hard",
-                    intent="above_average_group",
+                    id=_qid("group", dim, measure),
+                    text=f"Show {mlabel} by {dlabel}.",
+                    category="grouping",
+                    difficulty="easy",
+                    intent="group_by_measure",
                     proof_sql=(
-                        f"WITH grp AS ("
-                        f"  SELECT {_ident(dim)} AS dim_val, AVG({_ident(measure)}) AS avg_m "
-                        f"  FROM {table} WHERE {_ident(dim)} IS NOT NULL GROUP BY 1"
-                        f"), overall AS (SELECT AVG({_ident(measure)}) AS o FROM {table}) "
-                        f"SELECT g.dim_val AS {_ident(dim)}, g.avg_m AS avg_{measure} "
-                        f"FROM grp g, overall o WHERE g.avg_m > o.o "
-                        f"ORDER BY g.avg_m DESC LIMIT 20"
+                        f"SELECT {_ident(dim)} AS {_ident(dim)}, "
+                        f"SUM({_ident(measure)}) AS total_{measure} "
+                        f"FROM {table} WHERE {_ident(dim)} IS NOT NULL "
+                        f"GROUP BY {_ident(dim)} "
+                        f"ORDER BY total_{measure} DESC LIMIT 25"
                     ),
-                    confidence=conf * 0.9,
+                    confidence=dconf,
+                    columns_used=[dim, measure],
+                )
+            )
+            _add(
+                QuestionCandidate(
+                    id=_qid("top5", dim, measure),
+                    text=f"What are the top 5 {dlabel} by {mlabel}?",
+                    category="ranking",
+                    difficulty="easy",
+                    intent="top_n_by_measure",
+                    proof_sql=(
+                        f"SELECT {_ident(dim)} AS {_ident(dim)}, "
+                        f"SUM({_ident(measure)}) AS total_{measure} "
+                        f"FROM {table} WHERE {_ident(dim)} IS NOT NULL "
+                        f"GROUP BY {_ident(dim)} "
+                        f"ORDER BY total_{measure} DESC LIMIT 5"
+                    ),
+                    confidence=dconf,
                     columns_used=[dim, measure],
                 )
             )
 
-    # Multi-metric relationship (no causation wording)
-    if len(capabilities.measures) >= 2:
-        m1, m2 = capabilities.measures[0], capabilities.measures[1]
-        out.append(
+    # How many records per category
+    for dim in dimensions[:3]:
+        dlabel = _human(dim)
+        _add(
             QuestionCandidate(
-                id=_qid("rel", m1, m2),
-                text=f"Is there a relationship between {_human(m1)} and {_human(m2)}?",
-                category="relationship",
-                difficulty="hard",
-                intent="corr_pair",
+                id=_qid("count", "per", dim),
+                text=f"How many records belong to each {dlabel}?",
+                category="overview",
+                difficulty="easy",
+                intent="count_by_dimension",
                 proof_sql=(
-                    f"SELECT CORR(CAST({_ident(m1)} AS DOUBLE), CAST({_ident(m2)} AS DOUBLE)) "
-                    f"AS correlation FROM {table} "
-                    f"WHERE {_ident(m1)} IS NOT NULL AND {_ident(m2)} IS NOT NULL"
+                    f"SELECT {_ident(dim)} AS {_ident(dim)}, COUNT(*) AS record_count "
+                    f"FROM {table} WHERE {_ident(dim)} IS NOT NULL "
+                    f"GROUP BY {_ident(dim)} ORDER BY record_count DESC LIMIT 25"
                 ),
-                confidence=min(conf_map.get(m1, 0.7), conf_map.get(m2, 0.7)),
-                columns_used=[m1, m2],
+                confidence=conf_map.get(dim, 0.8),
+                columns_used=[dim],
             )
         )
 
-    # Entity counts
+    # Unique entity count (still simple)
     for ent in capabilities.entities[:2]:
-        out.append(
+        if ent in dimensions:
+            continue
+        _add(
             QuestionCandidate(
                 id=_qid("entity", ent),
                 text=f"How many unique {_human(ent)} values are there?",
                 category="overview",
                 difficulty="easy",
                 intent="distinct_entity",
-                proof_sql=f"SELECT COUNT(DISTINCT {_ident(ent)}) AS unique_{ent} FROM {table}",
+                proof_sql=(
+                    f"SELECT COUNT(DISTINCT {_ident(ent)}) AS unique_{ent} FROM {table}"
+                ),
                 confidence=conf_map.get(ent, 0.85),
                 columns_used=[ent],
             )
         )
 
-    # Drop questions that reference low-confidence ambiguous monetary "value/amount/total" alone
+    # Drop low-confidence ambiguous monetary columns
     filtered: List[QuestionCandidate] = []
     for c in out:
         skip = False
         for col in c.columns_used:
             s = sem_by.get(col)
-            if s and s.semantic_type == "monetary_measure" and s.confidence < 0.75:
-                if s.column.lower() in {"value", "amount", "total"} and c.intent in {
-                    "sum_measure",
-                    "top_group_by_measure",
-                }:
-                    skip = True
+            if (
+                s
+                and s.semantic_type == "monetary_measure"
+                and s.confidence < 0.75
+                and s.column.lower() in {"value", "amount", "total"}
+                and c.intent in {"sum_measure", "top_group_by_measure"}
+            ):
+                skip = True
         if not skip:
             filtered.append(c)
     return filtered

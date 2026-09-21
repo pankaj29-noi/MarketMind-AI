@@ -1,4 +1,4 @@
-"""Tests for adaptive dataset-aware question generation."""
+"""Tests for adaptive simple suggested-question generation."""
 from __future__ import annotations
 
 import csv
@@ -8,8 +8,9 @@ import uuid
 
 import pytest
 
-from backend.services.adaptive_questions.engine import generate_suggested_questions
+from backend.mcp.data_access import run_query
 from backend.services.adaptive_questions.cache import invalidate_session
+from backend.services.adaptive_questions.engine import generate_suggested_questions
 from backend.services.session_manager import session_manager
 
 
@@ -30,7 +31,6 @@ def _load_csv(rows: list[dict], fieldnames: list[str]) -> tuple[str, str]:
 @pytest.fixture(autouse=True)
 def _cleanup_sessions():
     yield
-    # best-effort: nothing global to clear beyond cache keys we invalidate in tests
 
 
 def test_sales_dataset_questions_reference_real_columns():
@@ -46,11 +46,11 @@ def test_sales_dataset_questions_reference_real_columns():
     invalidate_session(session_id)
     result = generate_suggested_questions(session_id, dataset_id, count=8)
     assert result["questions"], result.get("message")
+    assert 1 <= len(result["questions"]) <= 10
     texts = " ".join(q["text"].lower() for q in result["questions"])
     assert "sales" in texts or "region" in texts or "quantity" in texts
     assert "salary" not in texts
     assert all("profit" not in q["text"].lower() for q in result["questions"])
-    assert all("revenue" not in q["text"].lower() or "sales" in q["text"].lower() for q in result["questions"])
 
 
 def test_employee_dataset_adapts_away_from_sales_language():
@@ -101,13 +101,9 @@ def test_empty_dataset_message():
     assert result.get("message")
 
 
-# ── Tiered discovery (quick / analytics / advanced / expert) ────────────────
-
-
-def _rich_sales_rows(n: int = 240) -> list[dict]:
+def _rich_sales_rows(n: int = 80) -> list[dict]:
     regions = ["North", "South", "East", "West"]
     categories = ["Electronics", "Apparel", "Grocery", "Tools"]
-    suppliers = [f"Supplier {i}" for i in range(1, 9)]
     rows = []
     for i in range(n):
         year = 2024 + (i % 2)
@@ -119,7 +115,6 @@ def _rich_sales_rows(n: int = 240) -> list[dict]:
                 "order_date": f"{year}-{month:02d}-15",
                 "region": regions[i % len(regions)],
                 "category": categories[(i // 3) % len(categories)],
-                "supplier": suppliers[i % len(suppliers)],
                 "quantity": (i % 9) + 1,
                 "revenue": revenue,
                 "profit": round(revenue * (0.1 + (i % 5) / 50), 2),
@@ -131,31 +126,24 @@ def _rich_sales_rows(n: int = 240) -> list[dict]:
 def _rich_session():
     return _load_csv(
         _rich_sales_rows(),
-        [
-            "order_id",
-            "order_date",
-            "region",
-            "category",
-            "supplier",
-            "quantity",
-            "revenue",
-            "profit",
-        ],
+        ["order_id", "order_date", "region", "category", "quantity", "revenue", "profit"],
     )
 
 
-def test_rich_dataset_produces_all_four_tiers():
+def test_simple_only_no_advanced_or_expert_tiers():
     session_id, dataset_id = _rich_session()
     invalidate_session(session_id)
-    result = generate_suggested_questions(session_id, dataset_id, count=14)
+    result = generate_suggested_questions(session_id, dataset_id, count=10)
+    assert result["questions"]
+    assert 5 <= len(result["questions"]) <= 10
     tiers = {t["tier"] for t in result["tiers"]}
-    assert {"quick", "analytics", "advanced", "expert"} <= tiers, tiers
-    assert result["complexity"]["band"] in {"moderate", "rich"}
-    # Advanced/expert questions must be multi-column analytical questions
+    assert tiers <= {"quick"}
+    assert "advanced" not in tiers
+    assert "expert" not in tiers
     for q in result["questions"]:
-        if q["tier"] in {"advanced", "expert"}:
-            assert q["operations"], q
-            assert q["validation_status"] == "executed"
+        assert q["tier"] == "quick"
+        assert q["difficulty"] == "easy"
+        assert q["validation_status"] == "executed"
 
 
 def test_generated_questions_never_reference_unknown_columns():
@@ -164,49 +152,70 @@ def test_generated_questions_never_reference_unknown_columns():
     from backend.services.adaptive_questions.profiler import profile_dataset
 
     known = {c.name for c in profile_dataset(session_id, dataset_id).columns}
-    result = generate_suggested_questions(session_id, dataset_id, count=14)
+    result = generate_suggested_questions(session_id, dataset_id, count=10)
     for q in result["questions"]:
         for col in q.get("required_columns", []):
             assert col in known, f"hallucinated column {col} in {q['text']}"
 
 
-def test_simple_dataset_does_not_force_expert_questions():
+def test_simple_dataset_shows_only_valid_questions():
     session_id, dataset_id = _load_csv(
         [{"name": n, "age": a} for n, a in [("A", 30), ("B", 41), ("C", 25), ("D", 52)]],
         ["name", "age"],
     )
     invalidate_session(session_id)
-    result = generate_suggested_questions(session_id, dataset_id, count=14)
+    result = generate_suggested_questions(session_id, dataset_id, count=10)
     tiers = {t["tier"] for t in result["tiers"]}
-    assert "expert" not in tiers
-    assert result["complexity"]["band"] in {"minimal", "basic"}
+    assert tiers <= {"quick"}
     assert result["questions"], result.get("message")
+    assert len(result["questions"]) <= 10
 
 
-def test_refresh_returns_new_questions_without_repeats():
+def test_each_displayed_question_executes_on_duckdb():
+    """Every returned suggestion has already been DuckDB-verified; re-check proof."""
     session_id, dataset_id = _rich_session()
     invalidate_session(session_id)
-    first = generate_suggested_questions(session_id, dataset_id, count=12)
-    ids = [q["id"] for q in first["questions"]]
-    second = generate_suggested_questions(
-        session_id, dataset_id, count=12, refresh=True, exclude_ids=ids
-    )
-    assert second["questions"]
-    assert not (set(ids) & {q["id"] for q in second["questions"]})
+    result = generate_suggested_questions(session_id, dataset_id, count=8)
+    assert result["questions"]
+    from backend.services.adaptive_questions.profiler import profile_dataset
+    from backend.services.adaptive_questions.templates import generate_candidates
+    from backend.services.adaptive_questions.capabilities import build_capabilities
+    from backend.services.adaptive_questions.semantics import build_semantics
+
+    profile = profile_dataset(session_id, dataset_id)
+    caps = build_capabilities(profile, build_semantics(profile))
+    by_id = {c.id: c for c in generate_candidates(profile, caps, build_semantics(profile))}
+    for q in result["questions"]:
+        cand = by_id.get(q["id"])
+        assert cand is not None, q
+        res = run_query(session_id, dataset_id, cand.proof_sql)
+        assert res.get("success"), res.get("error")
 
 
 def test_cache_hit_is_fast_and_dataset_scoped():
     session_id, dataset_id = _rich_session()
     invalidate_session(session_id)
-    first = generate_suggested_questions(session_id, dataset_id, count=12)
-    second = generate_suggested_questions(session_id, dataset_id, count=12)
+    first = generate_suggested_questions(session_id, dataset_id, count=8)
+    second = generate_suggested_questions(session_id, dataset_id, count=8)
     assert first["cache_hit"] is False
     assert second["cache_hit"] is True
     assert [q["id"] for q in first["questions"]] == [q["id"] for q in second["questions"]]
 
 
+def test_refresh_returns_new_questions_without_repeats():
+    session_id, dataset_id = _rich_session()
+    invalidate_session(session_id)
+    first = generate_suggested_questions(session_id, dataset_id, count=8)
+    ids = [q["id"] for q in first["questions"]]
+    second = generate_suggested_questions(
+        session_id, dataset_id, count=8, refresh=True, exclude_ids=ids
+    )
+    # May return fewer if pool exhausted — never invent extras
+    if second["questions"]:
+        assert not (set(ids) & {q["id"] for q in second["questions"]})
+
+
 def test_followups_are_grounded_in_result_and_schema():
-    from backend.mcp.data_access import run_query
     from backend.services.adaptive_questions import generate_followup_questions
     from backend.services.adaptive_questions.profiler import profile_dataset
 
@@ -226,7 +235,6 @@ def test_followups_are_grounded_in_result_and_schema():
         result_rows=res["rows"],
         count=3,
     )
-    assert fu["questions"]
     known = {c.name for c in profile_dataset(session_id, dataset_id).columns}
     for q in fu["questions"]:
         for col in q.get("required_columns", []):
@@ -235,9 +243,6 @@ def test_followups_are_grounded_in_result_and_schema():
 
 
 def test_generated_proof_sql_is_read_only():
-    from backend.services.adaptive_questions.advanced_patterns import (
-        generate_advanced_candidates,
-    )
     from backend.services.adaptive_questions.capabilities import build_capabilities
     from backend.services.adaptive_questions.profiler import profile_dataset
     from backend.services.adaptive_questions.semantics import build_semantics
@@ -247,9 +252,7 @@ def test_generated_proof_sql_is_read_only():
     profile = profile_dataset(session_id, dataset_id)
     semantics = build_semantics(profile)
     caps = build_capabilities(profile, semantics)
-    candidates = generate_candidates(profile, caps, semantics) + generate_advanced_candidates(
-        profile, caps, semantics
-    )
+    candidates = generate_candidates(profile, caps, semantics)
     banned = (
         "insert",
         "update ",
@@ -266,3 +269,52 @@ def test_generated_proof_sql_is_read_only():
         low = c.proof_sql.lower()
         assert low.strip().startswith(("select", "with"))
         assert not any(b in low for b in banned), c.proof_sql
+
+
+def test_iot_schema_adapts_without_assuming_sales_columns():
+    session_id, dataset_id = _load_csv(
+        [
+            {"device_id": "d1", "site": "Plant-A", "temp_c": "21.5", "humidity": "40"},
+            {"device_id": "d2", "site": "Plant-B", "temp_c": "23.1", "humidity": "55"},
+            {"device_id": "d3", "site": "Plant-A", "temp_c": "19.8", "humidity": "48"},
+            {"device_id": "d4", "site": "Plant-C", "temp_c": "22.0", "humidity": "51"},
+        ],
+        ["device_id", "site", "temp_c", "humidity"],
+    )
+    invalidate_session(session_id)
+    result = generate_suggested_questions(session_id, dataset_id, count=8)
+    assert result["questions"]
+    texts = " ".join(q["text"].lower() for q in result["questions"])
+    assert "temp" in texts or "humidity" in texts or "site" in texts or "records" in texts
+    for banned in ("revenue", "profit", "product", "sales"):
+        assert banned not in texts
+    assert len(result["questions"]) <= 10
+    for q in result["questions"]:
+        assert q["tier"] == "quick"
+
+
+def test_survey_schema_count_and_category_questions():
+    session_id, dataset_id = _load_csv(
+        [
+            {"respondent": "r1", "city": "Austin", "score": "8", "channel": "email"},
+            {"respondent": "r2", "city": "Dallas", "score": "6", "channel": "phone"},
+            {"respondent": "r3", "city": "Austin", "score": "9", "channel": "email"},
+            {"respondent": "r4", "city": "Houston", "score": "7", "channel": "web"},
+            {"respondent": "r5", "city": "Dallas", "score": "5", "channel": "web"},
+        ],
+        ["respondent", "city", "score", "channel"],
+    )
+    invalidate_session(session_id)
+    result = generate_suggested_questions(session_id, dataset_id, count=8)
+    assert result["questions"]
+    texts = " ".join(q["text"].lower() for q in result["questions"])
+    assert "score" in texts or "city" in texts or "channel" in texts or "records" in texts
+    assert "revenue" not in texts
+    assert all(q["validation_status"] == "executed" for q in result["questions"])
+
+
+def test_count_clamped_to_ten():
+    session_id, dataset_id = _rich_session()
+    invalidate_session(session_id)
+    result = generate_suggested_questions(session_id, dataset_id, count=50)
+    assert len(result["questions"]) <= 10

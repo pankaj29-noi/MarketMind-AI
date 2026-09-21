@@ -55,7 +55,7 @@ function groupByTier(
 
 export const SuggestedQuestionsPanel: React.FC<SuggestedQuestionsPanelProps> = ({
   title = 'Questions you can ask',
-  subtitle = 'Discovered from this CSV — every suggestion is validated against your data',
+  subtitle = 'Simple starter questions verified against your CSV columns',
   questions,
   tiers,
   complexity,

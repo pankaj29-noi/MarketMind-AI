@@ -571,7 +571,7 @@ class FeedbackRequest(BaseModel):
 
 class SuggestedQuestionsRequest(BaseModel):
     dataset_id: str
-    count: int = 10
+    count: int = 8
     difficulty: str = "mixed"
     refresh: bool = False
     exclude_ids: Optional[List[str]] = None
@@ -584,8 +584,8 @@ async def suggested_questions_endpoint(
     _: None = Depends(limit_expensive_endpoint),
 ):
     """
-    Generate dataset-aware analytics questions for an uploaded CSV session.
-    Candidates are proven via read-only DuckDB execution before being returned.
+    Generate 5–10 simple dataset-aware starter questions for an uploaded CSV.
+    Each question is schema-validated and proven via DuckDB before return.
     """
     from backend.services.adaptive_questions import generate_suggested_questions
     from backend.services.session_manager import session_manager as sm
@@ -595,7 +595,7 @@ async def suggested_questions_endpoint(
     dataset_id = (request.dataset_id or "").strip()
     if not dataset_id:
         raise HTTPException(status_code=400, detail="dataset_id is required.")
-    count = max(1, min(int(request.count or 10), 20))
+    count = max(1, min(int(request.count or 8), 10))
     try:
         result = await asyncio.to_thread(
             generate_suggested_questions,

@@ -91,7 +91,7 @@ export const App: React.FC = () => {
       const res = await fetchSuggestedQuestions({
         sessionId: data.session_id,
         datasetId: data.dataset_id,
-        count: 14,
+        count: 8,
         refresh: opts?.refresh,
         excludeIds: opts?.excludeIds,
       });

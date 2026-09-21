@@ -65,7 +65,7 @@ export async function fetchSuggestedQuestions(params: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       dataset_id: params.datasetId,
-      count: params.count ?? 14,
+      count: params.count ?? 8,
       difficulty: 'mixed',
       refresh: Boolean(params.refresh),
       exclude_ids: params.excludeIds ?? [],

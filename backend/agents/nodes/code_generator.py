@@ -169,6 +169,11 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
 
     ir = build_question_ir(question, schema_profile or {})
     complexity = ir.complexity or classify_question_complexity(question)
+    # Suggestion verifier / callers may force SIMPLE for fast, reliable SQL.
+    forced = (state.get("analysis_artifacts") or {}).get("force_complexity")
+    if forced in ("SIMPLE", "COMPLEX", "VERY_COMPLEX"):
+        complexity = forced
+        ir.complexity = forced
     ir_block = format_ir_for_llm(ir)
     if ir_block:
         requirement_contract = requirement_contract + "\n\n" + ir_block
@@ -399,6 +404,19 @@ def code_generator_node(state: AgentState) -> Dict[str, Any]:
                 sqlcoder_last_error,
             )
         return None
+
+    # Suggestion verification: stop after deterministic paths (patterns / fallback).
+    # Full SQLCoder + API LLM still run on click via the normal /analyze pipeline.
+    if (state.get("analysis_artifacts") or {}).get("suggestion_verify"):
+        return _finish(
+            "",
+            source=ANALYSIS_SOURCE_FALLBACK,
+            failed=True,
+            failure={
+                "failure_type": "suggestion_verify_no_deterministic_sql",
+                "error_message": "No deterministic SQL for suggestion verify.",
+            },
+        )
 
     if approach == "sql":
         from backend.services.sql.sqlcoder_service import should_try_sqlcoder_first
